@@ -76,6 +76,8 @@ jobs:
           pwsh -NoProfile -File ./install.ps1 -DryRun -Yes -Preset nope
           if ($LASTEXITCODE -ne 2) { Write-Error "expected exit 2, got $LASTEXITCODE"; exit 1 }
           Write-Host "invalid preset rejected with exit 2"
+          # $LASTEXITCODE is still 2 from the child; the step would inherit it.
+          exit 0
 
   install-linux:
     name: real install (ubuntu container)
