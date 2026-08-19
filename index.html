@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Claude Code — one command</title>
+<style>
+  :root {
+    --bg:#faf7f2; --fg:#1a1613; --dim:#6b6259; --line:#e2dbd0;
+    --card:#fffdfa; --accent:#b3362a; --code:#1c1815; --codefg:#f0ebe3;
+  }
+  @media (prefers-color-scheme:dark) {
+    :root { --bg:#14110e; --fg:#f5f1ea; --dim:#9a9188; --line:#2c2622;
+            --card:#1c1815; --accent:#f2705f; --code:#0e0c0a; --codefg:#f0ebe3; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); line-height:1.65;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+    padding:56px 22px 96px; }
+  main { max-width:760px; margin:0 auto; }
+  h1 { font-size:clamp(1.9rem,5vw,2.7rem); letter-spacing:-.02em; margin:0 0 .25em; }
+  h2 { font-size:1.25rem; margin:2.6em 0 .5em; letter-spacing:-.01em; }
+  h3 { font-size:1rem; margin:1.8em 0 .4em; }
+  .lede { font-size:1.12rem; color:var(--dim); max-width:60ch; margin-bottom:2.4em; }
+  p, li { max-width:66ch; }
+  a { color:var(--accent); }
+  ol, ul { padding-left:1.2em; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:1.1em 0 0; }
+  .card h3 { margin-top:0; display:flex; align-items:center; gap:.5em; }
+  .os { font-size:.72rem; text-transform:uppercase; letter-spacing:.09em;
+    color:var(--dim); border:1px solid var(--line); border-radius:999px; padding:2px 9px; }
+  pre { background:var(--code); color:var(--codefg); border-radius:9px;
+    padding:14px 16px; overflow-x:auto; font-size:12.5px; line-height:1.6;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; margin:.6em 0 0;
+    position:relative; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; }
+  p code, li code { background:var(--line); border-radius:4px; padding:1px 5px; }
+  button.copy { position:absolute; top:8px; right:8px; font:inherit; font-size:11px;
+    background:rgba(255,255,255,.12); color:var(--codefg); border:1px solid rgba(255,255,255,.2);
+    border-radius:6px; padding:3px 9px; cursor:pointer; }
+  button.copy:hover { background:rgba(255,255,255,.22); }
+  .note { color:var(--dim); font-size:.93rem; }
+  hr { border:0; border-top:1px solid var(--line); margin:3.4em 0 0; }
+  details { margin-top:1em; }
+  summary { cursor:pointer; color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Set up Claude Code</h1>
+<p class="lede">One command. It installs the Claude Code CLI, the tools it needs, and the
+<code>hire</code> skill — then checks that all of it actually works.</p>
+
+<h2>1. Run the command for your computer</h2>
+<p class="note">Copy the whole line, paste it into your terminal, press Enter. It will ask
+for nothing and take a few minutes.</p>
+
+<div class="card">
+  <h3><span class="os">Mac</span> or Linux</h3>
+  <p class="note">Open <strong>Terminal</strong> (press <code>⌘ Space</code>, type
+  "Terminal", press Enter).</p>
+<pre><button class="copy">copy</button><code id="mac">curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire bash</code></pre>
+</div>
+
+<div class="card">
+  <h3><span class="os">Windows</span></h3>
+  <p class="note">Open <strong>PowerShell</strong> (press the Windows key, type
+  "PowerShell", press Enter).</p>
+<pre><button class="copy">copy</button><code id="win">$env:CCI_SKILLS='hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex</code></pre>
+</div>
+
+<h2>2. Then</h2>
+<ol>
+  <li><strong>Close the terminal and open a new one.</strong> This is not optional — the
+    new window is what picks up the newly installed command.</li>
+  <li>Type <code>claude</code> and press Enter.</li>
+  <li>Type <code>/login</code> and sign in.</li>
+  <li>Type <code>/hire</code> to check the skill loaded.</li>
+</ol>
+
+<h2>If something goes wrong</h2>
+<p>Install the three pieces by hand, in this order. Each one is independent, so start at
+whichever step failed.</p>
+
+<h3>a. Node</h3>
+<p>Download the <strong>LTS</strong> installer from
+<a href="https://nodejs.org">nodejs.org</a> and run it. On Mac with Homebrew:
+<code>brew install node</code>. Open a new terminal afterwards, then check with
+<code>node -v</code> — you want 20 or higher.</p>
+
+<h3>b. Claude Code</h3>
+<p>Anthropic's own installer, which is what the command above calls anyway:</p>
+<pre><button class="copy">copy</button><code>curl -fsSL https://claude.ai/install.sh | bash</code></pre>
+<p class="note">On Windows, in PowerShell:</p>
+<pre><button class="copy">copy</button><code>irm https://claude.ai/install.ps1 | iex</code></pre>
+
+<h3>c. The hire skill</h3>
+<pre><button class="copy">copy</button><code>npx skills add https://github.com/jtlgrowth/hire --skill hire</code></pre>
+<p class="note">Same command on every platform. <code>npx</code> comes with Node, so do
+step (a) first.</p>
+
+<h3>Still stuck?</h3>
+<ul>
+  <li><code>claude: command not found</code> — you are in the terminal window you had open
+    before installing. Open a new one.</li>
+  <li>Windows says running scripts is disabled — run
+    <code>Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass</code> first, then
+    paste the command again.</li>
+  <li>Anything else — send the last 20 lines of the output. The error text is the useful
+    part; a screenshot of the whole window is not.</li>
+</ul>
+
+<h2>Rather read it before running it?</h2>
+<p>Sensible. Piping a script from the internet into your shell is a real decision, and
+these are short enough to read:
+<a href="https://github.com/jtlgrowth/claude-code-installer/blob/main/install.sh">install.sh</a> ·
+<a href="https://github.com/jtlgrowth/claude-code-installer/blob/main/install.ps1">install.ps1</a>.
+Both support a dry run that prints every command and executes none:</p>
+<pre><button class="copy">copy</button><code>curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_DRY_RUN=1 CCI_SKILLS=hire bash</code></pre>
+
+<hr>
+<p class="note">Source:
+<a href="https://github.com/jtlgrowth/claude-code-installer">claude-code-installer</a> ·
+<a href="https://github.com/jtlgrowth/hire">hire</a>. Both MIT.
+Running the command again later is safe — it updates Claude Code and leaves anything you
+have already set up alone.</p>
+
+</main>
+<script>
+  document.querySelectorAll('button.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var code = btn.parentElement.querySelector('code').textContent;
+      navigator.clipboard.writeText(code).then(function () {
+        btn.textContent = 'copied';
+        setTimeout(function () { btn.textContent = 'copy'; }, 1600);
+      }, function () {
+        btn.textContent = 'select it manually';
+        setTimeout(function () { btn.textContent = 'copy'; }, 2400);
+      });
+    });
+  });
+</script>
+</body>
+</html>
