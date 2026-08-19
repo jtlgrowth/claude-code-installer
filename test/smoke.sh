@@ -17,8 +17,7 @@ if bash -n install.sh; then pass "install.sh parses"; else fail "install.sh has 
 
 head2 "2. shellcheck"
 if command -v shellcheck >/dev/null 2>&1; then
-  # SC2317: functions called only via traps/indirection read as unreachable.
-  if shellcheck -e SC2317 install.sh test/smoke.sh; then pass "shellcheck clean"; else fail "shellcheck findings"; fi
+  if shellcheck install.sh test/smoke.sh; then pass "shellcheck clean"; else fail "shellcheck findings"; fi
 else
   printf '  \033[33mSKIP\033[0m shellcheck not installed\n'
 fi

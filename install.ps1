@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    claude-code-installer — one command, working Claude Code CLI, on Windows.
+    claude-code-installer - one command, working Claude Code CLI, on Windows.
 
 .DESCRIPTION
     Installs the prerequisites you need to actually use Claude Code (git, Node
@@ -44,6 +44,7 @@ if ($env:CCI_MINIMAL -eq '1') { $Minimal = $true }
 if ($env:CCI_YES     -eq '1') { $Yes     = $true }
 if ($env:CCI_DRY_RUN -eq '1') { $DryRun  = $true }
 
+$script:Preset    = $Preset
 $script:Installed = [System.Collections.Generic.List[string]]::new()
 $script:Already   = [System.Collections.Generic.List[string]]::new()
 $script:Skipped   = [System.Collections.Generic.List[string]]::new()
@@ -56,7 +57,7 @@ function Write-Ok    { param([string]$Text) Write-Host "  ok " -ForegroundColor 
 function Write-Warn2 { param([string]$Text) Write-Host "  !! " -ForegroundColor Yellow -NoNewline; Write-Host $Text }
 function Write-Err   { param([string]$Text) Write-Host "error: " -ForegroundColor Red -NoNewline; Write-Host $Text }
 
-function Test-Have {
+function Test-Command {
     param([string]$Name)
     $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
@@ -88,7 +89,7 @@ function Confirm-Action {
 # -------------------------------------------------------------- preflight ----
 
 Write-Step "Claude Code installer"
-if ($DryRun) { Write-Warn2 "dry run — nothing will be installed" }
+if ($DryRun) { Write-Warn2 "dry run - nothing will be installed" }
 
 if (-not [Environment]::Is64BitProcess) {
     Write-Err "Claude Code does not support 32-bit Windows."
@@ -124,19 +125,19 @@ function Test-WinGetPackage {
     }
 }
 
-function Install-Prereqs {
+function Install-Prerequisite {
     Write-Step "Prerequisites"
 
     if ($Minimal) {
         $script:Skipped.Add("prerequisites (-Minimal)")
-        Write-Info "minimal mode — skipping git/node/ripgrep"
+        Write-Info "minimal mode - skipping git/node/ripgrep"
         return
     }
 
     # winget ships as App Installer on Windows 10 1809+ / 11. Side-loading the
     # MSIX from a script is where Windows installers go to die, so we stop and
     # point at the Store instead of guessing.
-    if (-not (Test-Have 'winget')) {
+    if (-not (Test-Command 'winget')) {
         Write-Warn2 "winget is not available, so prerequisites cannot be installed automatically."
         Write-Host "    Install 'App Installer' from the Microsoft Store, then re-run this script:"
         Write-Host "    https://apps.microsoft.com/detail/9nblggh4nns1"
@@ -154,7 +155,7 @@ function Install-Prereqs {
     foreach ($p in $packages) {
         $needsInstall = $true
 
-        if (Test-Have $p.Cmd) {
+        if (Test-Command $p.Cmd) {
             if ($p.Cmd -eq 'node') {
                 $major = 0
                 try { $major = [int](((node --version) -replace '^v', '') -split '\.')[0] } catch { $major = 0 }
@@ -162,7 +163,7 @@ function Install-Prereqs {
                     $needsInstall = $false
                     $script:Already.Add("node $(node --version)")
                 } else {
-                    Write-Warn2 "node v$major is older than v$NodeMinMajor — upgrading"
+                    Write-Warn2 "node v$major is older than v$NodeMinMajor - upgrading"
                 }
             } else {
                 $needsInstall = $false
@@ -197,7 +198,7 @@ function Install-Prereqs {
             Write-Ok "$($p.Label) installed"
         } else {
             $script:Skipped.Add("$($p.Label) (install failed)")
-            Write-Warn2 "could not install $($p.Label) — continuing"
+            Write-Warn2 "could not install $($p.Label) - continuing"
         }
     }
 }
@@ -206,10 +207,10 @@ function Install-Prereqs {
 
 function Install-ClaudeCode {
     Write-Step "Claude Code"
-    $wasPresent = Test-Have 'claude'
+    $wasPresent = Test-Command 'claude'
     if ($wasPresent) {
         $script:Already.Add("Claude Code $(claude --version 2>$null)")
-        Write-Ok "Claude Code already installed — running its updater anyway"
+        Write-Ok "Claude Code already installed - running its updater anyway"
     }
     Write-Info "running the official Anthropic installer"
     Invoke-Step "irm $OfficialInstaller | iex" {
@@ -252,7 +253,7 @@ function Install-PresetFile {
         Invoke-Step "download $Url -> $Dest.new" {
             Invoke-RestMethod -Uri $Url -OutFile "$Dest.new"
         } | Out-Null
-        Write-Warn2 "$(Split-Path $Dest -Leaf) already exists — wrote it as .new beside the original"
+        Write-Warn2 "$(Split-Path $Dest -Leaf) already exists - wrote it as .new beside the original"
         $script:Skipped.Add("$(Split-Path $Dest -Leaf) (existing file kept)")
     } else {
         Invoke-Step "download $Url -> $Dest" {
@@ -264,8 +265,8 @@ function Install-PresetFile {
 }
 
 function Install-Preset {
-    if (-not $Preset) { return }
-    Write-Step "Preset: $Preset"
+    if (-not $script:Preset) { return }
+    Write-Step "Preset: $($script:Preset)"
     $claudeDir = Join-Path $env:USERPROFILE '.claude'
     if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null }
     Install-PresetFile "$RepoRaw/preset/settings.json" (Join-Path $claudeDir 'settings.json')
@@ -281,11 +282,11 @@ function Test-Installation {
         return $true
     }
 
-    if (-not (Test-Have 'claude')) {
+    if (-not (Test-Command 'claude')) {
         Write-Err "'claude' is not on PATH after installation."
         Write-Host ""
         Write-Host "Open a NEW PowerShell window and run:  claude --version"
-        Write-Host "If it works there, the install is fine — this session just had a stale PATH."
+        Write-Host "If it works there, the install is fine - this session just had a stale PATH."
         return $false
     }
 
@@ -326,7 +327,7 @@ function Write-Summary {
 # ----------------------------------------------------------------- main -----
 
 try {
-    Install-Prereqs
+    Install-Prerequisite
     Install-ClaudeCode
     Update-SessionPath
     Install-Preset

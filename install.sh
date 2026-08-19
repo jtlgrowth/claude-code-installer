@@ -548,7 +548,11 @@ summary() {
 # ------------------------------------------------------------------- main ----
 
 main() {
-  setup_pkg_manager && install_prereqs || true
+  # A failed or declined package-manager step is not fatal: Claude Code itself
+  # installs without one, so skip the prerequisites and carry on.
+  if setup_pkg_manager; then
+    install_prereqs
+  fi
   install_claude
   fix_path
   install_preset
