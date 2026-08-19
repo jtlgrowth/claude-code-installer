@@ -25,7 +25,9 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('jtl')]
+    # Deliberately not [ValidateSet]: when CCI_PRESET is unset the default binds
+    # as an empty string, which a ValidateSet rejects and would break every run
+    # that does not ask for a preset. Validated by hand below instead.
     [string]$Preset = $env:CCI_PRESET,
     [switch]$Minimal,
     [switch]$Yes,
@@ -39,6 +41,11 @@ $ProgressPreference = 'SilentlyContinue'
 $RepoRaw           = 'https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main'
 $OfficialInstaller = 'https://claude.ai/install.ps1'
 $NodeMinMajor      = 20
+
+if ($Preset -and $Preset -ne 'jtl') {
+    Write-Error "unknown preset: $Preset (only 'jtl' exists)"
+    exit 2
+}
 
 if ($env:CCI_MINIMAL -eq '1') { $Minimal = $true }
 if ($env:CCI_YES     -eq '1') { $Yes     = $true }

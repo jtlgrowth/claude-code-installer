@@ -52,12 +52,26 @@ jobs:
           if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Host; exit 1 }
           Write-Host "PSScriptAnalyzer clean"
 
-      - name: Dry run
+      - name: Dry run (no preset)
         shell: pwsh
         env:
           CCI_DRY_RUN: '1'
           CCI_YES: '1'
         run: ./install.ps1
+
+      - name: Dry run (--preset jtl, and via the env var)
+        shell: pwsh
+        run: |
+          ./install.ps1 -DryRun -Yes -Preset jtl
+          $env:CCI_PRESET = 'jtl'
+          ./install.ps1 -DryRun -Yes
+
+      - name: Invalid preset is rejected
+        shell: pwsh
+        run: |
+          ./install.ps1 -DryRun -Yes -Preset nope 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Error "invalid preset was accepted"; exit 1 }
+          Write-Host "invalid preset rejected (exit $LASTEXITCODE)"
 
   install-linux:
     name: real install (ubuntu container)
