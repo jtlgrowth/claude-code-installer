@@ -3,7 +3,7 @@
 # claude-code-installer — one command, working Claude Code CLI.
 # macOS / Linux / WSL / Git Bash.
 #
-#   curl -fsSL https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | bash
 #
 # Flags (or env vars, for piped use):
 #   --preset jtl   CCI_PRESET=jtl     also write a starter ~/.claude config
@@ -19,7 +19,7 @@
 
 set -Eeuo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main"
+REPO_RAW="https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main"
 OFFICIAL_INSTALLER="https://claude.ai/install.sh"
 HOMEBREW_INSTALLER="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 NODE_MIN_MAJOR=20

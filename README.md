@@ -12,13 +12,13 @@ end, the script fails loudly rather than printing a green "done".
 **macOS / Linux / WSL / Git Bash**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | bash
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 ```
 
 Then open a new terminal and run `claude`. Sign in with `/login`.
@@ -29,14 +29,14 @@ Piping a script from the internet into your shell means running code you have no
 true of this script and of every other install one-liner. If you would rather look first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh -o install.sh
 less install.sh          # read it
 bash install.sh --dry-run  # see every command it would run, without running any
 bash install.sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 -OutFile install.ps1
 notepad install.ps1
 .\install.ps1 -DryRun
 .\install.ps1
@@ -78,11 +78,11 @@ Because a piped script has no command-line arguments, every flag has an environm
 Piped, with options:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.sh | CCI_PRESET=jtl bash
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_PRESET=jtl bash
 ```
 
 ```powershell
-$env:CCI_PRESET = 'jtl'; irm https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.ps1 | iex
+$env:CCI_PRESET = 'jtl'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 ```
 
 ## The preset

@@ -9,11 +9,11 @@
     and verifies the result instead of assuming it.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 
 .EXAMPLE
     # With options, download first (a piped script cannot take parameters):
-    irm https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main/install.ps1 -OutFile install.ps1
+    irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 -OutFile install.ps1
     .\install.ps1 -Preset jtl
 
 .NOTES
@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$RepoRaw           = 'https://raw.githubusercontent.com/whereisdotva-gif/claude-code-installer/main'
+$RepoRaw           = 'https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main'
 $OfficialInstaller = 'https://claude.ai/install.ps1'
 $NodeMinMajor      = 20
 
