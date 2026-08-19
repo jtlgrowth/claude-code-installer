@@ -69,7 +69,10 @@ $SkillCatalog = @{
 
 $script:SkillNames = @()
 if ($Skills) {
-    $script:SkillNames = $Skills.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    # @() is load-bearing: a one-element pipeline returns a scalar string, and
+    # under Set-StrictMode reading .Count on a string is a terminating error.
+    # Without it, --skills with exactly one skill - the common case - throws.
+    $script:SkillNames = @($Skills.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     foreach ($name in $script:SkillNames) {
         if (-not $SkillCatalog.ContainsKey($name)) {
             [Console]::Error.WriteLine("error: unknown skill: $name (known skills: $($SkillCatalog.Keys -join ', '))")
@@ -384,7 +387,7 @@ function Install-OneSkill {
 }
 
 function Install-Skill {
-    if (-not $script:SkillNames -or $script:SkillNames.Count -eq 0) { return }
+    if ($script:SkillNames.Count -eq 0) { return }
     Write-Step "Skills"
 
     # tar.exe ships with Windows 10 1803 and later. Older boxes get the npx route.

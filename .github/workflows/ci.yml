@@ -47,9 +47,13 @@ jobs:
         shell: pwsh
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
-          $results = Invoke-ScriptAnalyzer -Path ./install.ps1 -Severity Error,Warning `
-            -ExcludeRule PSAvoidUsingWriteHost,PSUseShouldProcessForStateChangingFunctions,PSAvoidUsingInvokeExpression
-          if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Host; exit 1 }
+          $bad = 0
+          foreach ($f in @('./install.ps1', './test/skill-install.ps1')) {
+            $results = Invoke-ScriptAnalyzer -Path $f -Severity Error,Warning `
+              -ExcludeRule PSAvoidUsingWriteHost,PSUseShouldProcessForStateChangingFunctions,PSAvoidUsingInvokeExpression
+            if ($results) { Write-Host "findings in $f"; $results | Format-Table -AutoSize | Out-String | Write-Host; $bad++ }
+          }
+          if ($bad) { exit 1 }
           Write-Host "PSScriptAnalyzer clean"
 
       - name: Dry run (no preset) exits 0
