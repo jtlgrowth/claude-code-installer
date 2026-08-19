@@ -43,7 +43,10 @@ $OfficialInstaller = 'https://claude.ai/install.ps1'
 $NodeMinMajor      = 20
 
 if ($Preset -and $Preset -ne 'jtl') {
-    Write-Error "unknown preset: $Preset (only 'jtl' exists)"
+    # Write-Error would throw a terminating error under ErrorActionPreference
+    # 'Stop' and bury a simple usage mistake in a stack of PowerShell noise.
+    # Print it plainly and exit with a code the caller can test.
+    [Console]::Error.WriteLine("error: unknown preset: $Preset (only 'jtl' exists)")
     exit 2
 }
 

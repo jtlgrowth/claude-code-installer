@@ -68,12 +68,14 @@ jobs:
           $env:CCI_PRESET = 'jtl'
           ./install.ps1 -DryRun -Yes
 
-      - name: Invalid preset is rejected
+      # Run in a child process so the script's own exit code is observable —
+      # dot-sourcing it into this step would surface a throw, not an exit code.
+      - name: Invalid preset is rejected with exit 2
         shell: pwsh
         run: |
-          ./install.ps1 -DryRun -Yes -Preset nope 2>$null
-          if ($LASTEXITCODE -eq 0) { Write-Error "invalid preset was accepted"; exit 1 }
-          Write-Host "invalid preset rejected (exit $LASTEXITCODE)"
+          pwsh -NoProfile -File ./install.ps1 -DryRun -Yes -Preset nope
+          if ($LASTEXITCODE -ne 2) { Write-Error "expected exit 2, got $LASTEXITCODE"; exit 1 }
+          Write-Host "invalid preset rejected with exit 2"
 
   install-linux:
     name: real install (ubuntu container)
