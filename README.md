@@ -120,6 +120,7 @@ Because a piped script has no command-line arguments, every flag has an environm
 | Flag | Environment variable | Effect |
 | --- | --- | --- |
 | `--preset jtl` | `CCI_PRESET=jtl` | also write a starter `~/.claude` config (never overwrites an existing one) |
+| `--skills hire` | `CCI_SKILLS=hire` | also install agent skills into `~/.claude/skills/` (comma-separated; never overwrites an existing skill) |
 | `--minimal` | `CCI_MINIMAL=1` | skip the package manager and `git`/`node`/`ripgrep`; install Claude Code only |
 | `--yes` | `CCI_YES=1` | non-interactive, answer yes to everything |
 | `--dry-run` | `CCI_DRY_RUN=1` | print every command, execute none |
@@ -148,6 +149,28 @@ there becomes doctrine everywhere by accident. Copy it into a project root when 
 
 It contains no credentials and no private configuration. If either file already exists, the preset
 is written beside it as `.new` and yours is left untouched. See [`preset/README.md`](preset/README.md).
+
+## Skills
+
+`--skills hire` installs [`hire`](https://github.com/jtlgrowth/hire) into
+`~/.claude/skills/hire`, which is where Claude Code looks for it — after this, `/hire`
+works in any session.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire bash
+```
+
+```powershell
+$env:CCI_SKILLS = 'hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
+```
+
+Known skills: `hire`. The list is an allowlist in the script rather than a
+`--skills <url>` flag, because a `curl | bash` installer that downloads arbitrary URLs is
+a different and much worse thing than one that installs a named, reviewable list.
+
+A skill that is already installed is left alone and reported as such — re-running the line
+is safe. Skills ship scripts, so they need Node, which this installer already sets up
+unless you pass `--minimal`.
 
 ## Troubleshooting
 
@@ -184,12 +207,13 @@ Anthropic's refuse to run that way.
 | --- | --- |
 | macOS 15 (Apple Silicon) | full smoke suite, `--dry-run` on every flag combination, and a real end-to-end install into a scratch `$HOME` — `claude --version` verified |
 | Ubuntu 24.04 | real install in a container, plus a re-run asserting the shell rc does not grow — **runs in CI on every push**, not on the author's machine |
-| Windows Server 2022 (CI) | parse, `PSScriptAnalyzer`, and dry runs with no preset, `-Preset jtl` and `CCI_PRESET=jtl` — each asserted to exit 0, plus a bad preset asserted to exit 2. **No end-to-end install on a real Windows desktop yet.** |
+| Windows Server 2022 (CI) | parse, `PSScriptAnalyzer`, dry runs (no preset, `-Preset jtl`, `CCI_PRESET=jtl`, `-Skills hire`, `CCI_SKILLS=hire`) each asserted to exit 0, bad preset and bad skill each asserted to exit 2, **and a real skill install** — `hire` downloaded, extracted, its own test suite run, then a re-run asserted to leave it untouched. **Claude Code itself has still not been installed end to end on a real Windows desktop.** |
 | WSL | covered by the Linux path; not separately exercised |
 
-Windows is the honest gap: CI proves the script runs, parses and branches correctly on Windows,
-but nobody has yet watched it install Claude Code end to end on a real desktop. If you do, the
-output either way is genuinely useful — open an issue.
+Windows is the honest gap. CI now installs a skill for real on a Windows runner and runs that
+skill's tests there, so the `--skills` path is genuinely exercised — but the Claude Code install
+itself still delegates to Anthropic's installer, and nobody has yet watched that run end to end
+on a real Windows desktop. If you do, the output either way is genuinely useful — open an issue.
 
 ## Uninstall
 

@@ -7,6 +7,7 @@
 #
 # Flags (or env vars, for piped use):
 #   --preset jtl   CCI_PRESET=jtl     also write a starter ~/.claude config
+#   --skills hire  CCI_SKILLS=hire   also install agent skills (comma-separated)
 #   --minimal      CCI_MINIMAL=1      skip package manager + git/node/ripgrep
 #   --yes          CCI_YES=1          non-interactive, assume yes
 #   --dry-run      CCI_DRY_RUN=1      print every command, execute none
@@ -25,6 +26,7 @@ HOMEBREW_INSTALLER="https://raw.githubusercontent.com/Homebrew/install/HEAD/inst
 NODE_MIN_MAJOR=20
 
 PRESET="${CCI_PRESET:-}"
+SKILLS="${CCI_SKILLS:-}"
 MINIMAL="${CCI_MINIMAL:-0}"
 ASSUME_YES="${CCI_YES:-0}"
 DRY_RUN="${CCI_DRY_RUN:-0}"
@@ -108,6 +110,28 @@ ask() {
   esac
 }
 
+# ------------------------------------------------------------------ skills ----
+
+# The skill allowlist. A name maps to a tarball, the directory inside it, and how
+# many leading path components to strip.
+#
+# Deliberately a case statement and not a JSON manifest: this repo has no jq
+# dependency anywhere and should not grow one for a table this size. Deliberately
+# an allowlist and not a --skills <url> flag: that would turn a curl-to-bash
+# installer into an arbitrary-code downloader.
+skill_source() {
+  case "$1" in
+    hire)
+      echo "https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main"
+      echo "hire-main/skills/hire"
+      echo "2"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+known_skills() { printf 'known skills: hire'; }
+
 usage() {
   cat <<USAGE
 claude-code-installer — one command, working Claude Code CLI.
@@ -117,6 +141,7 @@ macOS / Linux / WSL / Git Bash.
 
 Flags (or env vars, for piped use):
   --preset jtl   CCI_PRESET=jtl    also write a starter ~/.claude config
+  --skills hire  CCI_SKILLS=hire   also install agent skills (comma-separated)
   --minimal      CCI_MINIMAL=1     skip package manager + git/node/ripgrep
   --yes          CCI_YES=1         non-interactive, assume yes
   --dry-run      CCI_DRY_RUN=1     print every command, execute none
@@ -147,6 +172,19 @@ while [ $# -gt 0 ]; do
         exit 2
       fi
       shift ;;
+    --skills)
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        err "--skills needs a value ($(known_skills))"
+        exit 2
+      fi
+      SKILLS="$2"; shift 2 ;;
+    --skills=*)
+      SKILLS="${1#*=}"
+      if [ -z "$SKILLS" ]; then
+        err "--skills needs a value ($(known_skills))"
+        exit 2
+      fi
+      shift ;;
     --minimal)  MINIMAL=1; shift ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
@@ -158,6 +196,17 @@ done
 if [ -n "$PRESET" ] && [ "$PRESET" != "jtl" ]; then
   err "unknown preset: $PRESET (only 'jtl' exists)"
   exit 2
+fi
+
+# Reject an unknown skill before anything is installed, not halfway through.
+if [ -n "$SKILLS" ]; then
+  for _s in $(printf '%s' "$SKILLS" | tr ',' ' '); do
+    if ! skill_source "$_s" >/dev/null 2>&1; then
+      err "unknown skill: $_s ($(known_skills))"
+      exit 2
+    fi
+  done
+  unset _s
 fi
 
 # -------------------------------------------------------------- preflight ----
@@ -502,6 +551,85 @@ install_preset() {
   say "       cp ~/.claude/templates/project-CLAUDE.md ./CLAUDE.md"
 }
 
+# ------------------------------------------------------------------ skills ----
+
+# Skills live in ~/.claude/skills/<name>. That path is what makes /<name> resolve
+# inside Claude Code; anywhere else and the skill is just files on disk.
+install_one_skill() {
+  local name="$1" url member strip dest tmp
+  { read -r url; read -r member; read -r strip; } < <(skill_source "$name")
+  dest="$HOME/.claude/skills/$name"
+
+  # Already there: leave it alone and say so. Re-running this installer is
+  # something people do (the first run scrolls past), and it must never
+  # overwrite a skill someone has been editing.
+  if [ -e "$dest" ]; then
+    warn "skill $name already installed at $dest — left alone"
+    SKIPPED+=("skill $name (already present)")
+    return 0
+  fi
+
+  if [ "$DRY_RUN" = "1" ]; then
+    printf '%s  would download:%s %s\n' "$C_DIM" "$C_RESET" "$url"
+    printf '%s  would extract:%s  %s -> %s\n' "$C_DIM" "$C_RESET" "$member" "$dest"
+    return 0
+  fi
+
+  run mkdir -p "$HOME/.claude/skills"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/cci-skill-XXXXXX.tgz")"
+
+  # Download to a file, then extract. Piping curl straight into tar hides
+  # curl's exit code behind tar's, so a 404 looks like a corrupt archive.
+  if ! fetch_to "$url" "$tmp"; then
+    rm -f "$tmp"
+    warn "could not download skill $name"
+    SKIPPED+=("skill $name (download failed)")
+    return 0
+  fi
+
+  if ! tar -xzf "$tmp" -C "$HOME/.claude/skills" --strip-components="$strip" "$member" 2>/dev/null; then
+    rm -f "$tmp"
+    warn "could not extract skill $name"
+    SKIPPED+=("skill $name (extract failed)")
+    return 0
+  fi
+  rm -f "$tmp"
+
+  # Prove it, rather than trusting that tar exited 0 over the right paths.
+  if [ ! -f "$dest/SKILL.md" ]; then
+    warn "skill $name extracted but has no SKILL.md — removing"
+    rm -rf "$dest"
+    SKIPPED+=("skill $name (no SKILL.md)")
+    return 0
+  fi
+
+  INSTALLED+=("skill $name")
+  ok "installed $dest"
+}
+
+install_skills() {
+  [ -z "$SKILLS" ] && return 0
+  step "Skills"
+
+  if ! have tar; then
+    warn "tar not found — cannot install skills"
+    SKIPPED+=("skills (no tar)")
+    return 0
+  fi
+
+  for name in $(printf '%s' "$SKILLS" | tr ',' ' '); do
+    install_one_skill "$name"
+  done
+
+  # A skill is Markdown plus scripts, and the scripts need a runtime. --minimal
+  # and Git Bash both skip the Node install, so say it plainly here instead of
+  # leaving someone with a skill that cannot run.
+  if ! have node; then
+    warn "node is not installed — skills that ship scripts will not run"
+    say "     install Node 20+ and re-open your terminal"
+  fi
+}
+
 # ----------------------------------------------------------------- verify ----
 
 verify() {
@@ -577,6 +705,7 @@ main() {
   install_claude
   fix_path
   install_preset
+  install_skills
 
   local rc=0
   verify || rc=1

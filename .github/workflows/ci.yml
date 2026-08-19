@@ -68,8 +68,49 @@ jobs:
           $env:CCI_PRESET = 'jtl'
           ./install.ps1 -DryRun -Yes
 
+      - name: Dry run (--skills hire, and via the env var)
+        shell: pwsh
+        run: |
+          ./install.ps1 -DryRun -Yes -Skills hire
+          $env:CCI_SKILLS = 'hire'
+          ./install.ps1 -DryRun -Yes
+
+      # The Windows half of the student one-liner. This is the only job that
+      # runs it on Windows at all, so it downloads and extracts for real.
+      - name: Install the hire skill for real
+        shell: pwsh
+        run: |
+          $env:CCI_SKILLS = 'hire'
+          $env:CCI_YES = '1'
+          ./install.ps1
+          $skill = Join-Path $env:USERPROFILE '.claude\skills\hire\SKILL.md'
+          if (-not (Test-Path $skill)) { Write-Error "hire skill not installed at $skill"; exit 1 }
+          node (Join-Path $env:USERPROFILE '.claude\skills\hire\test\tests.mjs')
+          if ($LASTEXITCODE -ne 0) { Write-Error "hire's own tests failed"; exit 1 }
+          Write-Host "hire installed and its tests pass on Windows"
+
+      - name: Re-running must leave the skill alone
+        shell: pwsh
+        run: |
+          $skill = Join-Path $env:USERPROFILE '.claude\skills\hire'
+          $before = (Get-ChildItem $skill -Recurse -File).Count
+          $env:CCI_SKILLS = 'hire'; $env:CCI_YES = '1'
+          $out = ./install.ps1 | Out-String
+          $after = (Get-ChildItem $skill -Recurse -File).Count
+          if ($before -ne $after) { Write-Error "file count changed $before -> $after"; exit 1 }
+          if ($out -notmatch 'already installed') { Write-Error "re-run did not report the skill as present"; exit 1 }
+          Write-Host "re-run left the skill alone ($after files)"
+
       # Run in a child process so the script's own exit code is observable —
       # dot-sourcing it into this step would surface a throw, not an exit code.
+      - name: Invalid skill is rejected with exit 2
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File ./install.ps1 -DryRun -Yes -Skills nope
+          if ($LASTEXITCODE -ne 2) { Write-Error "expected exit 2, got $LASTEXITCODE"; exit 1 }
+          Write-Host "invalid skill rejected with exit 2"
+          exit 0
+
       - name: Invalid preset is rejected with exit 2
         shell: pwsh
         run: |
@@ -89,10 +130,16 @@ jobs:
 
       - uses: actions/checkout@v5
 
-      - name: Install for real
+      - name: Install for real, with the skill the students get
         env:
           CCI_YES: '1'
+          CCI_SKILLS: hire
         run: bash install.sh
+
+      - name: The hire skill is installed and its own tests pass
+        run: |
+          test -f "$HOME/.claude/skills/hire/SKILL.md" || { echo "hire not installed"; exit 1; }
+          node "$HOME/.claude/skills/hire/test/tests.mjs"
 
       - name: Verify claude is on PATH
         run: |
@@ -102,9 +149,13 @@ jobs:
       - name: Re-run must be idempotent
         env:
           CCI_YES: '1'
+          CCI_SKILLS: hire
         run: |
           before=$(grep -c 'claude-code-installer' "$HOME/.bashrc" || true)
+          files_before=$(find "$HOME/.claude/skills/hire" -type f | wc -l)
           bash install.sh
           after=$(grep -c 'claude-code-installer' "$HOME/.bashrc" || true)
-          echo "marker count: $before -> $after"
+          files_after=$(find "$HOME/.claude/skills/hire" -type f | wc -l)
+          echo "marker count: $before -> $after   skill files: $files_before -> $files_after"
           [ "$before" = "$after" ] || { echo "shell rc grew on re-run"; exit 1; }
+          [ "$files_before" = "$files_after" ] || { echo "skill was re-downloaded"; exit 1; }

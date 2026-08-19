@@ -19,6 +19,7 @@
 .NOTES
     Piped usage can still pass options via environment variables:
       $env:CCI_PRESET  = 'jtl'
+      $env:CCI_SKILLS  = 'hire'
       $env:CCI_MINIMAL = '1'
       $env:CCI_YES     = '1'
       $env:CCI_DRY_RUN = '1'
@@ -29,6 +30,11 @@ param(
     # as an empty string, which a ValidateSet rejects and would break every run
     # that does not ask for a preset. Validated by hand below instead.
     [string]$Preset = $env:CCI_PRESET,
+
+    # Comma-separated agent skills to install, e.g. 'hire'. Same no-ValidateSet
+    # reasoning as -Preset above.
+    [string]$Skills = $env:CCI_SKILLS,
+
     [switch]$Minimal,
     [switch]$Yes,
     [switch]$DryRun
@@ -48,6 +54,28 @@ if ($Preset -and $Preset -ne 'jtl') {
     # Print it plainly and exit with a code the caller can test.
     [Console]::Error.WriteLine("error: unknown preset: $Preset (only 'jtl' exists)")
     exit 2
+}
+
+# The skill allowlist: name -> tarball, the directory inside it, and how many
+# leading path components to strip. An allowlist rather than a -Skills <url>
+# flag, so an irm|iex installer never becomes an arbitrary-code downloader.
+$SkillCatalog = @{
+    hire = @{
+        Url    = 'https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main'
+        Member = 'hire-main/skills/hire'
+        Strip  = 2
+    }
+}
+
+$script:SkillNames = @()
+if ($Skills) {
+    $script:SkillNames = $Skills.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    foreach ($name in $script:SkillNames) {
+        if (-not $SkillCatalog.ContainsKey($name)) {
+            [Console]::Error.WriteLine("error: unknown skill: $name (known skills: $($SkillCatalog.Keys -join ', '))")
+            exit 2
+        }
+    }
 }
 
 if ($env:CCI_MINIMAL -eq '1') { $Minimal = $true }
@@ -292,6 +320,91 @@ function Install-Preset {
     Write-Host "       copy `$env:USERPROFILE\.claude\templates\project-CLAUDE.md .\CLAUDE.md"
 }
 
+# --------------------------------------------------------------- skills -----
+
+# Skills live in ~/.claude/skills/<name>. That path is what makes /<name> resolve
+# inside Claude Code; anywhere else and the skill is just files on disk.
+function Install-OneSkill {
+    param([string]$Name)
+
+    $entry     = $SkillCatalog[$Name]
+    $skillsDir = Join-Path (Join-Path $env:USERPROFILE '.claude') 'skills'
+    $dest      = Join-Path $skillsDir $Name
+
+    # Already there: leave it alone. People re-run this line when the first run
+    # scrolled past, and that must never overwrite a skill they have edited.
+    if (Test-Path $dest) {
+        Write-Warn2 "skill $Name already installed at $dest - left alone"
+        $script:Skipped.Add("skill $Name (already present)")
+        return
+    }
+
+    if ($DryRun) {
+        Write-Host "  would download: " -ForegroundColor DarkGray -NoNewline
+        Write-Host $entry.Url
+        Write-Host "  would extract:  " -ForegroundColor DarkGray -NoNewline
+        Write-Host "$($entry.Member) -> $dest"
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+    $tmp = Join-Path $env:TEMP "cci-skill-$Name.tgz"
+
+    # Download to a file, then extract. A PowerShell pipeline carries text, not
+    # bytes, so piping the gzip stream into tar would corrupt it - this is the
+    # whole reason the bash one-liner cannot simply be reused here.
+    try {
+        Invoke-RestMethod -Uri $entry.Url -OutFile $tmp
+    } catch {
+        Write-Warn2 "could not download skill ${Name}: $($_.Exception.Message)"
+        $script:Skipped.Add("skill $Name (download failed)")
+        return
+    }
+
+    & tar -xzf $tmp -C $skillsDir --strip-components=$($entry.Strip) $entry.Member 2>$null
+    $tarOk = ($LASTEXITCODE -eq 0)
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+
+    if (-not $tarOk) {
+        Write-Warn2 "could not extract skill $Name"
+        $script:Skipped.Add("skill $Name (extract failed)")
+        return
+    }
+
+    # Prove it, rather than trusting tar exited 0 over the right paths.
+    if (-not (Test-Path (Join-Path $dest 'SKILL.md'))) {
+        Write-Warn2 "skill $Name extracted but has no SKILL.md - removing"
+        Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
+        $script:Skipped.Add("skill $Name (no SKILL.md)")
+        return
+    }
+
+    $script:Installed.Add("skill $Name")
+    Write-Ok "installed $dest"
+}
+
+function Install-Skill {
+    if (-not $script:SkillNames -or $script:SkillNames.Count -eq 0) { return }
+    Write-Step "Skills"
+
+    # tar.exe ships with Windows 10 1803 and later. Older boxes get the npx route.
+    if (-not (Test-Command 'tar')) {
+        Write-Warn2 "tar not found - cannot install skills"
+        Write-Host "     install them with: npx skills add https://github.com/jtlgrowth/<skill>"
+        $script:Skipped.Add("skills (no tar)")
+        return
+    }
+
+    foreach ($name in $script:SkillNames) { Install-OneSkill $name }
+
+    # A skill is Markdown plus scripts, and the scripts need a runtime. -Minimal
+    # skips the Node install, so say so rather than leaving a skill that cannot run.
+    if (-not (Test-Command 'node')) {
+        Write-Warn2 "node is not installed - skills that ship scripts will not run"
+        Write-Host "     install Node $NodeMinMajor+ and open a new PowerShell window"
+    }
+}
+
 # --------------------------------------------------------------- verify -----
 
 function Test-Installation {
@@ -354,6 +467,7 @@ try {
     Install-ClaudeCode
     Update-SessionPath
     Install-Preset
+    Install-Skill
     $ok = Test-Installation
     Write-Summary -Success $ok
     if (-not $ok) { exit 1 }

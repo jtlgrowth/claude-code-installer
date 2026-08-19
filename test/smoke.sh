@@ -106,7 +106,67 @@ for variant in "--dry-run" "--dry-run --minimal" "--dry-run --preset jtl"; do
   fi
 done
 
-head2 "11. sudo is refused"
+head2 "11. --skills"
+for variant in "--skills hire" "--skills=hire"; do
+  # shellcheck disable=SC2086
+  if out="$(bash install.sh --dry-run --minimal $variant 2>&1)"; then
+    if printf '%s' "$out" | grep -qE "would download:.*codeload\.github\.com/jtlgrowth/hire|skill hire already installed"; then
+      pass "'$variant' plans the hire download"
+    else
+      fail "'$variant' did not plan a skill install"
+    fi
+  else
+    fail "'$variant' exited non-zero"
+  fi
+done
+
+out="$(CCI_SKILLS=hire bash install.sh --dry-run --minimal 2>&1)"
+if printf '%s' "$out" | grep -qE "would download:.*jtlgrowth/hire|skill hire already installed"; then
+  pass "CCI_SKILLS=hire works via the env var"
+else
+  fail "CCI_SKILLS was ignored"
+fi
+
+# The skill must land where Claude Code actually looks for it.
+out="$(HOME=/tmp/cci-nonexistent-home bash install.sh --dry-run --minimal --skills hire 2>&1)"
+if printf '%s' "$out" | grep -q "/.claude/skills/hire"; then
+  pass "target is ~/.claude/skills/hire"
+else
+  fail "skill target path changed"
+fi
+
+head2 "12. Unknown or empty --skills fails cleanly"
+code=0
+bash install.sh --skills nope --dry-run >/dev/null 2>&1 || code=$?
+if [ "$code" -eq 2 ]; then pass "unknown skill exits 2"; else fail "unknown skill exited $code — expected 2"; fi
+for variant in "--skills" "--skills="; do
+  code=0
+  bash install.sh "$variant" >/dev/null 2>&1 || code=$?
+  if [ "$code" -eq 2 ]; then
+    pass "'$variant' exits 2"
+  else
+    fail "'$variant' exited $code — expected 2"
+  fi
+done
+
+head2 "13. PowerShell skill install (the real functions, extracted)"
+if command -v pwsh >/dev/null 2>&1; then
+  ps_scratch="$(mktemp -d)"
+  if pwsh -NoProfile -File test/skill-install.ps1 ./install.ps1 "$ps_scratch" >/dev/null 2>&1; then
+    if [ -f "$ps_scratch/.claude/skills/hire/SKILL.md" ]; then
+      pass "install.ps1 downloads and extracts a skill, and re-running leaves it alone"
+    else
+      fail "PowerShell skill install produced no SKILL.md"
+    fi
+  else
+    fail "PowerShell skill install failed"
+  fi
+  rm -rf "$ps_scratch"
+else
+  printf '  \033[33mSKIP\033[0m pwsh not installed\n'
+fi
+
+head2 "14. sudo is refused"
 out="$(SUDO_USER=someone bash install.sh --dry-run 2>&1 || true)"
 if [ "$(id -u)" -eq 0 ]; then
   if printf '%s' "$out" | grep -q "do not run this installer with sudo"; then
