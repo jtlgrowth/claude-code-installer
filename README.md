@@ -180,11 +180,12 @@ Anthropic's refuse to run that way.
 | --- | --- |
 | macOS 15 (Apple Silicon) | full smoke suite, `--dry-run` on every flag combination, and a real end-to-end install into a scratch `$HOME` — `claude --version` verified |
 | Ubuntu 24.04 | real install in a container, plus a re-run asserting the shell rc does not grow — **runs in CI on every push**, not on the author's machine |
-| Windows 10 / 11 | CI parses the script and runs `PSScriptAnalyzer` and a dry run. **No end-to-end install on real Windows hardware yet.** |
+| Windows Server 2022 (CI) | parse, `PSScriptAnalyzer`, and dry runs with no preset, `-Preset jtl` and `CCI_PRESET=jtl` — each asserted to exit 0, plus a bad preset asserted to exit 2. **No end-to-end install on a real Windows desktop yet.** |
 | WSL | covered by the Linux path; not separately exercised |
 
-Windows is the honest gap. If you run it there, the output either way is genuinely useful —
-open an issue.
+Windows is the honest gap: CI proves the script runs, parses and branches correctly on Windows,
+but nobody has yet watched it install Claude Code end to end on a real desktop. If you do, the
+output either way is genuinely useful — open an issue.
 
 ## Uninstall
 

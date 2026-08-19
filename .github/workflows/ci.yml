@@ -15,7 +15,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install shellcheck
         if: runner.os == 'Linux'
@@ -32,7 +32,7 @@ jobs:
     name: powershell (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Parse install.ps1
         shell: pwsh
@@ -87,7 +87,7 @@ jobs:
       - name: Bootstrap curl
         run: apt-get update && apt-get install -y curl ca-certificates sudo
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install for real
         env:
