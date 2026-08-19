@@ -434,7 +434,7 @@ install_claude() {
   local was_present=0
   if have claude; then
     was_present=1
-    ALREADY+=("Claude Code $(claude --version 2>/dev/null | head -1)")
+    ALREADY+=("Claude Code $(claude --version 2>/dev/null | head -1 | awk '{print $1}')")
     ok "Claude Code already installed — running its updater anyway"
   fi
   info "running the official Anthropic installer"

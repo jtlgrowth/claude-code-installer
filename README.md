@@ -1,6 +1,22 @@
+<div align="center">
+
 # claude-code-installer
 
-One command. A working [Claude Code](https://claude.com/claude-code) CLI. macOS, Windows, Linux, WSL.
+**One command. A working [Claude Code](https://claude.com/claude-code) CLI.**
+macOS · Windows · Linux · WSL
+
+[![ci](https://github.com/jtlgrowth/claude-code-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/jtlgrowth/claude-code-installer/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20WSL-black.svg)](#what-it-does)
+[![shell](https://img.shields.io/badge/shell-bash%20%7C%20powershell-black.svg)](#)
+
+<img src="demo/demo.gif" alt="A dry run of the installer: it detects Homebrew, git, node and ripgrep, prints every command it would run, and changes nothing." width="820">
+
+<sub>Recorded from a real `--dry-run`, unedited. Regenerate it with `vhs demo/demo.tape`.</sub>
+
+</div>
+
+---
 
 It installs the things you actually need around Claude Code — a package manager, `git`, Node LTS,
 `ripgrep` — then hands the CLI install itself to Anthropic's official installer, wires your `PATH`,
@@ -62,6 +78,40 @@ also never adds a second `PATH` line to your shell config.
 native binary. Node is here because `npx`-based MCP servers need it, and `git` and `ripgrep`
 because you will want them the moment you point Claude Code at a repo. If you want none of that,
 use `--minimal`.
+
+## How it works
+
+```
+                 ┌─────────────────────────────────────────┐
+  one command    │  detect OS, arch, shell, package manager │
+       │         └──────────────────┬──────────────────────┘
+       ▼                            ▼
+  install.sh          ┌──────────────────────────────┐
+  install.ps1         │  install what is missing:    │   already there? skipped
+                      │  brew/winget, git, node, rg  │
+                      └──────────────┬───────────────┘
+                                     ▼
+                      ┌──────────────────────────────┐
+                      │  Anthropic's own installer   │   checksum-verified native binary
+                      │  claude.ai/install.sh|.ps1   │   (not mirrored, not reimplemented)
+                      └──────────────┬───────────────┘
+                                     ▼
+                      ┌──────────────────────────────┐
+                      │  PATH into your shell rc     │   exactly once, re-run safe
+                      └──────────────┬───────────────┘
+                                     ▼
+                      ┌──────────────────────────────┐
+                      │  claude --version + doctor   │   non-zero exit if this fails
+                      └──────────────────────────────┘
+```
+
+Three properties this buys you, which a hand-typed sequence of commands does not:
+
+1. **Idempotent.** Run it twice and the second run installs nothing and adds no second `PATH`
+   line. The CI suite asserts that by counting the marker in the shell rc before and after.
+2. **Inspectable.** `--dry-run` prints every command without executing any of them. That is the
+   demo above.
+3. **Honest.** The exit code reflects whether `claude --version` actually answered.
 
 ## Options
 
@@ -126,14 +176,15 @@ Anthropic's refuse to run that way.
 
 ## Tested on
 
-| Platform | Status |
+| Platform | What was actually run |
 | --- | --- |
-| macOS (Apple Silicon) | dry-run + idempotence verified locally |
-| Ubuntu 24.04 (Docker) | full install verified |
-| Windows 10 / 11 | **not yet tested on real hardware** — CI parses the script, no end-to-end run |
-| WSL | covered by the Linux path, not separately tested |
+| macOS 15 (Apple Silicon) | full smoke suite, `--dry-run` on every flag combination, and a real end-to-end install into a scratch `$HOME` — `claude --version` verified |
+| Ubuntu 24.04 | real install in a container, plus a re-run asserting the shell rc does not grow — **runs in CI on every push**, not on the author's machine |
+| Windows 10 / 11 | CI parses the script and runs `PSScriptAnalyzer` and a dry run. **No end-to-end install on real Windows hardware yet.** |
+| WSL | covered by the Linux path; not separately exercised |
 
-If you run it on Windows, an issue with the output either way is genuinely useful.
+Windows is the honest gap. If you run it there, the output either way is genuinely useful —
+open an issue.
 
 ## Uninstall
 
