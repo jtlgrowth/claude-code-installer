@@ -23,6 +23,11 @@ It installs the things you actually need around Claude Code — a package manage
 and **verifies the result** instead of assuming it. If `claude --version` does not answer at the
 end, the script fails loudly rather than printing a green "done".
 
+## Just want it working?
+
+**[Follow the setup page](https://jtlgrowth.github.io/claude-code-installer/)** — one command
+for your platform, what to do next, and what to do when it does not work.
+
 ## Install
 
 **macOS / Linux / WSL / Git Bash**
@@ -207,13 +212,14 @@ Anthropic's refuse to run that way.
 | --- | --- |
 | macOS 15 (Apple Silicon) | full smoke suite, `--dry-run` on every flag combination, and a real end-to-end install into a scratch `$HOME` — `claude --version` verified |
 | Ubuntu 24.04 | real install in a container, plus a re-run asserting the shell rc does not grow — **runs in CI on every push**, not on the author's machine |
-| Windows Server 2022 (CI) | parse, `PSScriptAnalyzer`, dry runs (no preset, `-Preset jtl`, `CCI_PRESET=jtl`, `-Skills hire`, `CCI_SKILLS=hire`) each asserted to exit 0, bad preset and bad skill each asserted to exit 2, **and a real skill install** — `hire` downloaded, extracted, its own test suite run, then a re-run asserted to leave it untouched. **Claude Code itself has still not been installed end to end on a real Windows desktop.** |
+| Windows Server 2022 (CI) | **a real end-to-end install** — prerequisites via winget, Claude Code via Anthropic's installer, the `hire` skill downloaded and extracted, that skill's own test suite run on the runner, and a re-run asserted to change nothing. Plus parse, `PSScriptAnalyzer`, dry runs of every flag and env-var form asserted to exit 0, and a bad preset and bad skill each asserted to exit 2. Runs on every push. |
 | WSL | covered by the Linux path; not separately exercised |
 
-Windows is the honest gap. CI now installs a skill for real on a Windows runner and runs that
-skill's tests there, so the `--skills` path is genuinely exercised — but the Claude Code install
-itself still delegates to Anthropic's installer, and nobody has yet watched that run end to end
-on a real Windows desktop. If you do, the output either way is genuinely useful — open an issue.
+What is still untested on Windows is narrower than it was: CI installs everything for real on
+Windows Server 2022, but a GitHub runner is not a laptop. It has winget preinstalled, no
+existing developer setup to collide with, and an execution policy that does not fight you.
+Nobody has yet watched this run on a consumer Windows desktop. If you do, the output either
+way is genuinely useful — open an issue.
 
 ## Uninstall
 
