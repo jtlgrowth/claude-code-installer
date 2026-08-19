@@ -8,7 +8,7 @@ macOS · Windows · Linux · WSL
 [![ci](https://github.com/jtlgrowth/claude-code-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/jtlgrowth/claude-code-installer/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20WSL-black.svg)](#what-it-does)
-[![shell](https://img.shields.io/badge/shell-bash%20%7C%20powershell-black.svg)](#)
+[![shell](https://img.shields.io/badge/shell-bash%20%7C%20powershell-black.svg)](#how-it-works)
 
 <img src="demo/demo.gif" alt="A dry run of the installer: it detects Homebrew, git, node and ripgrep, prints every command it would run, and changes nothing." width="820">
 
@@ -137,10 +137,14 @@ $env:CCI_PRESET = 'jtl'; irm https://raw.githubusercontent.com/jtlgrowth/claude-
 
 ## The preset
 
-`--preset jtl` drops two starter files into `~/.claude`:
+`--preset jtl` drops two starter files:
 
-- `settings.json` — sane defaults, no keys, no telemetry changes
-- `CLAUDE.md` — a short template for writing project instructions that Claude Code actually follows
+- `~/.claude/settings.json` — sane defaults, no keys, no telemetry changes
+- `~/.claude/templates/project-CLAUDE.md` — a short template for writing project instructions
+
+The template deliberately lands in `templates/` rather than as `~/.claude/CLAUDE.md`. That path is
+your *global* instruction file, read in every project you open; a project-shaped template installed
+there becomes doctrine everywhere by accident. Copy it into a project root when you want it.
 
 It contains no credentials and no private configuration. If either file already exists, the preset
 is written beside it as `.new` and yours is left untouched. See [`preset/README.md`](preset/README.md).
@@ -189,12 +193,23 @@ output either way is genuinely useful — open an issue.
 
 ## Uninstall
 
+Remove Claude Code itself:
+
 ```bash
-rm -rf ~/.claude ~/.local/bin/claude
+rm -rf ~/.local/bin/claude ~/.local/share/claude
 ```
 
-Then remove the `# added by claude-code-installer` block from your shell rc. Homebrew, git, node
-and ripgrep are left alone — they are normal tools, not part of Claude Code.
+Remove the preset files, if you installed them:
+
+```bash
+rm -f ~/.claude/settings.json ~/.claude/templates/project-CLAUDE.md
+```
+
+Then delete the `# added by claude-code-installer` block from your shell rc.
+
+Do **not** `rm -rf ~/.claude` — that directory also holds your login, your session history and
+any configuration you added yourself, none of which came from this installer. Homebrew, git,
+node and ripgrep are left alone too; they are normal tools, not part of Claude Code.
 
 ## License
 

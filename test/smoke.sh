@@ -63,7 +63,32 @@ else
   pass "invalid preset rejected"
 fi
 
-head2 "8. Dry runs install nothing"
+head2 "8. --preset with no value fails cleanly"
+for variant in "--preset" "--preset="; do
+  out="$(bash install.sh "$variant" 2>&1 || true)"
+  code=0
+  bash install.sh "$variant" >/dev/null 2>&1 || code=$?
+  if [ "$code" -eq 2 ] && printf '%s' "$out" | grep -q "needs a value"; then
+    pass "'$variant' exits 2 with a usage message"
+  else
+    fail "'$variant' exited $code — expected 2 with a usage message"
+  fi
+done
+
+head2 "9. The preset never targets the global CLAUDE.md"
+out="$(bash install.sh --dry-run --preset jtl 2>&1)"
+if printf '%s' "$out" | grep -q "templates/project-CLAUDE.md"; then
+  pass "template goes to ~/.claude/templates/"
+else
+  fail "template destination changed"
+fi
+if printf '%s' "$out" | grep -qE 'download:.* -> .*/\.claude/CLAUDE\.md(\.new)?$'; then
+  fail "preset would write the global ~/.claude/CLAUDE.md"
+else
+  pass "global ~/.claude/CLAUDE.md left alone"
+fi
+
+head2 "10. Dry runs install nothing"
 for variant in "--dry-run" "--dry-run --minimal" "--dry-run --preset jtl"; do
   before="$(md5sum ~/.zshrc 2>/dev/null || shasum ~/.zshrc 2>/dev/null || echo none)"
   # shellcheck disable=SC2086
@@ -81,7 +106,7 @@ for variant in "--dry-run" "--dry-run --minimal" "--dry-run --preset jtl"; do
   fi
 done
 
-head2 "9. sudo is refused"
+head2 "11. sudo is refused"
 out="$(SUDO_USER=someone bash install.sh --dry-run 2>&1 || true)"
 if [ "$(id -u)" -eq 0 ]; then
   if printf '%s' "$out" | grep -q "do not run this installer with sudo"; then

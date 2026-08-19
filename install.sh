@@ -134,8 +134,19 @@ USAGE
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --preset)   PRESET="${2:-}"; shift 2 ;;
-    --preset=*) PRESET="${1#*=}"; shift ;;
+    --preset)
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        err "--preset needs a value (only 'jtl' exists)"
+        exit 2
+      fi
+      PRESET="$2"; shift 2 ;;
+    --preset=*)
+      PRESET="${1#*=}"
+      if [ -z "$PRESET" ]; then
+        err "--preset needs a value (only 'jtl' exists)"
+        exit 2
+      fi
+      shift ;;
     --minimal)  MINIMAL=1; shift ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
@@ -476,9 +487,19 @@ install_one_preset_file() {
 install_preset() {
   [ -z "$PRESET" ] && return 0
   step "Preset: $PRESET"
-  run mkdir -p "$HOME/.claude"
+  run mkdir -p "$HOME/.claude/templates"
+
+  # settings.json belongs at ~/.claude — that IS the global settings file.
   install_one_preset_file "$REPO_RAW/preset/settings.json" "$HOME/.claude/settings.json"
-  install_one_preset_file "$REPO_RAW/preset/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+
+  # The CLAUDE.md template does NOT. ~/.claude/CLAUDE.md is global instructions
+  # applied to every project, and a project-shaped template installed there
+  # would silently become doctrine for everything you open. Park it as a
+  # template and let the user copy it where it belongs.
+  install_one_preset_file "$REPO_RAW/preset/project-CLAUDE.md" \
+    "$HOME/.claude/templates/project-CLAUDE.md"
+  say "     copy it into a project root as CLAUDE.md when you want it:"
+  say "       cp ~/.claude/templates/project-CLAUDE.md ./CLAUDE.md"
 }
 
 # ----------------------------------------------------------------- verify ----

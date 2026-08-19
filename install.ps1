@@ -277,10 +277,19 @@ function Install-PresetFile {
 function Install-Preset {
     if (-not $script:Preset) { return }
     Write-Step "Preset: $($script:Preset)"
-    $claudeDir = Join-Path $env:USERPROFILE '.claude'
-    if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null }
+    $claudeDir   = Join-Path $env:USERPROFILE '.claude'
+    $templateDir = Join-Path $claudeDir 'templates'
+    if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $templateDir | Out-Null }
+
+    # settings.json belongs at ~/.claude - that IS the global settings file.
     Install-PresetFile "$RepoRaw/preset/settings.json" (Join-Path $claudeDir 'settings.json')
-    Install-PresetFile "$RepoRaw/preset/CLAUDE.md"     (Join-Path $claudeDir 'CLAUDE.md')
+
+    # The CLAUDE.md template does not. ~/.claude/CLAUDE.md is global
+    # instructions applied to every project, so a project-shaped template
+    # installed there would silently become doctrine for everything you open.
+    Install-PresetFile "$RepoRaw/preset/project-CLAUDE.md" (Join-Path $templateDir 'project-CLAUDE.md')
+    Write-Host "     copy it into a project root as CLAUDE.md when you want it:"
+    Write-Host "       copy `$env:USERPROFILE\.claude\templates\project-CLAUDE.md .\CLAUDE.md"
 }
 
 # --------------------------------------------------------------- verify -----

@@ -1,6 +1,10 @@
-# Project instructions
+# Project instructions — template
 
-`CLAUDE.md` is read automatically at the start of every Claude Code session in this directory.
+Copy this file into the root of a project as `CLAUDE.md`. Claude Code reads it automatically at
+the start of every session run from that directory.
+
+It is deliberately NOT installed as `~/.claude/CLAUDE.md`: that path is your *global* file and
+applies to every project you open, so project-specific rules do not belong there.
 Keep it short. Everything in here is paid for on every single turn, so a rule that never changes a
 decision is a rule that costs you tokens for nothing.
 
