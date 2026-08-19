@@ -99,10 +99,12 @@ jobs:
           $skill = Join-Path $env:USERPROFILE '.claude\skills\hire'
           $before = (Get-ChildItem $skill -Recurse -File).Count
           $env:CCI_SKILLS = 'hire'; $env:CCI_YES = '1'
-          $out = ./install.ps1 | Out-String
+          # *>&1 merges the information stream: the installer reports through
+          # Write-Host, which a plain pipeline does not capture.
+          $out = ./install.ps1 *>&1 | Out-String
           $after = (Get-ChildItem $skill -Recurse -File).Count
           if ($before -ne $after) { Write-Error "file count changed $before -> $after"; exit 1 }
-          if ($out -notmatch 'already installed') { Write-Error "re-run did not report the skill as present"; exit 1 }
+          if ($out -notmatch 'already present') { Write-Error "re-run did not report the skill as present"; exit 1 }
           Write-Host "re-run left the skill alone ($after files)"
 
       # Run in a child process so the script's own exit code is observable —
