@@ -517,7 +517,7 @@ summary() {
   local rc="$1"
   step "Summary"
   if [ ${#INSTALLED[@]} -gt 0 ]; then
-    say "  Installed:"
+    if [ "$DRY_RUN" = "1" ]; then say "  Would install:"; else say "  Installed:"; fi
     for i in "${INSTALLED[@]}"; do say "    + $i"; done
   fi
   if [ ${#ALREADY[@]} -gt 0 ]; then

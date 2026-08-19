@@ -52,12 +52,14 @@ jobs:
           if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Host; exit 1 }
           Write-Host "PSScriptAnalyzer clean"
 
-      - name: Dry run (no preset)
+      - name: Dry run (no preset) exits 0
         shell: pwsh
         env:
           CCI_DRY_RUN: '1'
           CCI_YES: '1'
-        run: ./install.ps1
+        run: |
+          ./install.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Error "dry run exited $LASTEXITCODE"; exit 1 }
 
       - name: Dry run (--preset jtl, and via the env var)
         shell: pwsh

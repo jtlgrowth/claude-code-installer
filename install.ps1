@@ -314,12 +314,16 @@ function Test-Installation {
 function Write-Summary {
     param([bool]$Success)
     Write-Step "Summary"
-    if ($script:Installed.Count) { Write-Host "  Installed:";       $script:Installed | ForEach-Object { Write-Host "    + $_" } }
+    $installedLabel = if ($DryRun) { "  Would install:" } else { "  Installed:" }
+    if ($script:Installed.Count) { Write-Host $installedLabel;      $script:Installed | ForEach-Object { Write-Host "    + $_" } }
     if ($script:Already.Count)   { Write-Host "  Already present:"; $script:Already   | ForEach-Object { Write-Host "    = $_" } }
     if ($script:Skipped.Count)   { Write-Host "  Skipped:";         $script:Skipped   | ForEach-Object { Write-Host "    - $_" } }
 
     Write-Host ""
-    if ($Success) {
+    if ($DryRun) {
+        Write-Host "Dry run complete - nothing was installed." -ForegroundColor Yellow
+        Write-Host "Re-run without -DryRun to actually install."
+    } elseif ($Success) {
         Write-Host "Claude Code is installed and working." -ForegroundColor Green
         Write-Host ""
         Write-Host "Next:"
@@ -341,6 +345,7 @@ try {
     $ok = Test-Installation
     Write-Summary -Success $ok
     if (-not $ok) { exit 1 }
+    exit 0
 } catch {
     Write-Err $_.Exception.Message
     Write-Host ""
