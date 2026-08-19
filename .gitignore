@@ -1,0 +1,6 @@
+# recording scratch
+demo/.render/
+*.ascii
+
+# OS noise
+.DS_Store

@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shell:
+    name: shell (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Install shellcheck (macOS)
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
+
+      - name: Smoke tests
+        run: bash test/smoke.sh
+
+  powershell:
+    name: powershell (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse install.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./install.ps1), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host "install.ps1 parses"
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          $results = Invoke-ScriptAnalyzer -Path ./install.ps1 -Severity Error,Warning `
+            -ExcludeRule PSAvoidUsingWriteHost,PSUseShouldProcessForStateChangingFunctions,PSAvoidUsingInvokeExpression
+          if ($results) { $results | Format-Table -AutoSize | Out-String | Write-Host; exit 1 }
+          Write-Host "PSScriptAnalyzer clean"
+
+      - name: Dry run
+        shell: pwsh
+        env:
+          CCI_DRY_RUN: '1'
+          CCI_YES: '1'
+        run: ./install.ps1
+
+  install-linux:
+    name: real install (ubuntu container)
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Bootstrap curl
+        run: apt-get update && apt-get install -y curl ca-certificates sudo
+
+      - uses: actions/checkout@v4
+
+      - name: Install for real
+        env:
+          CCI_YES: '1'
+        run: bash install.sh
+
+      - name: Verify claude is on PATH
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude --version
+
+      - name: Re-run must be idempotent
+        env:
+          CCI_YES: '1'
+        run: |
+          before=$(grep -c 'claude-code-installer' "$HOME/.bashrc" || true)
+          bash install.sh
+          after=$(grep -c 'claude-code-installer' "$HOME/.bashrc" || true)
+          echo "marker count: $before -> $after"
+          [ "$before" = "$after" ] || { echo "shell rc grew on re-run"; exit 1; }
