@@ -7,7 +7,7 @@
 #
 # Flags (or env vars, for piped use):
 #   --preset jtl   CCI_PRESET=jtl     also write a starter ~/.claude config
-#   --skills hire  CCI_SKILLS=hire   also install agent skills (comma-separated)
+#   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
 #   --minimal      CCI_MINIMAL=1      skip package manager + git/node/ripgrep
 #   --yes          CCI_YES=1          non-interactive, assume yes
 #   --dry-run      CCI_DRY_RUN=1      print every command, execute none
@@ -126,11 +126,17 @@ skill_source() {
       echo "hire-main/skills/hire"
       echo "2"
       ;;
+    setup)
+      # Same repo, second skill: name + standing rules in ~/.claude/CLAUDE.md.
+      echo "https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main"
+      echo "hire-main/skills/setup"
+      echo "2"
+      ;;
     *) return 1 ;;
   esac
 }
 
-known_skills() { printf 'known skills: hire'; }
+known_skills() { printf 'known skills: hire, setup'; }
 
 usage() {
   cat <<USAGE
@@ -141,7 +147,7 @@ macOS / Linux / WSL / Git Bash.
 
 Flags (or env vars, for piped use):
   --preset jtl   CCI_PRESET=jtl    also write a starter ~/.claude config
-  --skills hire  CCI_SKILLS=hire   also install agent skills (comma-separated)
+  --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
   --minimal      CCI_MINIMAL=1     skip package manager + git/node/ripgrep
   --yes          CCI_YES=1         non-interactive, assume yes
   --dry-run      CCI_DRY_RUN=1     print every command, execute none

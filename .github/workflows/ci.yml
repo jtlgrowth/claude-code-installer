@@ -76,7 +76,7 @@ jobs:
         shell: pwsh
         run: |
           ./install.ps1 -DryRun -Yes -Skills hire
-          $env:CCI_SKILLS = 'hire'
+          $env:CCI_SKILLS = 'hire,setup'
           ./install.ps1 -DryRun -Yes
 
       # The Windows half of the student one-liner. This is the only job that
@@ -84,14 +84,18 @@ jobs:
       - name: Install the hire skill for real
         shell: pwsh
         run: |
-          $env:CCI_SKILLS = 'hire'
+          $env:CCI_SKILLS = 'hire,setup'
           $env:CCI_YES = '1'
           ./install.ps1
           $skill = Join-Path $env:USERPROFILE '.claude\skills\hire\SKILL.md'
           if (-not (Test-Path $skill)) { Write-Error "hire skill not installed at $skill"; exit 1 }
           node (Join-Path $env:USERPROFILE '.claude\skills\hire\test\tests.mjs')
           if ($LASTEXITCODE -ne 0) { Write-Error "hire's own tests failed"; exit 1 }
-          Write-Host "hire installed and its tests pass on Windows"
+          $setup = Join-Path $env:USERPROFILE '.claude\skills\setup\SKILL.md'
+          if (-not (Test-Path $setup)) { Write-Error "setup skill not installed at $setup"; exit 1 }
+          node (Join-Path $env:USERPROFILE '.claude\skills\setup\test\tests.mjs')
+          if ($LASTEXITCODE -ne 0) { Write-Error "setup's own tests failed"; exit 1 }
+          Write-Host "hire + setup installed and their tests pass on Windows"
 
       - name: Re-running must leave the skill alone
         shell: pwsh
@@ -139,13 +143,15 @@ jobs:
       - name: Install for real, with the skill the students get
         env:
           CCI_YES: '1'
-          CCI_SKILLS: hire
+          CCI_SKILLS: hire,setup
         run: bash install.sh
 
       - name: The hire skill is installed and its own tests pass
         run: |
           test -f "$HOME/.claude/skills/hire/SKILL.md" || { echo "hire not installed"; exit 1; }
           node "$HOME/.claude/skills/hire/test/tests.mjs"
+          test -f "$HOME/.claude/skills/setup/SKILL.md" || { echo "setup not installed"; exit 1; }
+          node "$HOME/.claude/skills/setup/test/tests.mjs"
 
       - name: Verify claude is on PATH
         run: |
@@ -155,7 +161,7 @@ jobs:
       - name: Re-run must be idempotent
         env:
           CCI_YES: '1'
-          CCI_SKILLS: hire
+          CCI_SKILLS: hire,setup
         run: |
           before=$(grep -c 'claude-code-installer' "$HOME/.bashrc" || true)
           files_before=$(find "$HOME/.claude/skills/hire" -type f | wc -l)

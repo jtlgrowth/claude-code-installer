@@ -125,7 +125,7 @@ Because a piped script has no command-line arguments, every flag has an environm
 | Flag | Environment variable | Effect |
 | --- | --- | --- |
 | `--preset jtl` | `CCI_PRESET=jtl` | also write a starter `~/.claude` config (never overwrites an existing one) |
-| `--skills hire` | `CCI_SKILLS=hire` | also install agent skills into `~/.claude/skills/` (comma-separated; never overwrites an existing skill) |
+| `--skills hire,setup` | `CCI_SKILLS=hire,setup` | also install agent skills into `~/.claude/skills/` (comma-separated; known: `hire`, `setup`; never overwrites an existing skill) |
 | `--minimal` | `CCI_MINIMAL=1` | skip the package manager and `git`/`node`/`ripgrep`; install Claude Code only |
 | `--yes` | `CCI_YES=1` | non-interactive, answer yes to everything |
 | `--dry-run` | `CCI_DRY_RUN=1` | print every command, execute none |
@@ -162,11 +162,11 @@ is written beside it as `.new` and yours is left untouched. See [`preset/README.
 works in any session.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire bash
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire,setup bash
 ```
 
 ```powershell
-$env:CCI_SKILLS = 'hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
+$env:CCI_SKILLS = 'hire,setup'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 ```
 
 Known skills: `hire`. The list is an allowlist in the script rather than a

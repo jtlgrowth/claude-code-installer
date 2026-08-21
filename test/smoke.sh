@@ -107,7 +107,7 @@ for variant in "--dry-run" "--dry-run --minimal" "--dry-run --preset jtl"; do
 done
 
 head2 "11. --skills"
-for variant in "--skills hire" "--skills=hire"; do
+for variant in "--skills hire" "--skills=hire" "--skills hire,setup"; do
   # shellcheck disable=SC2086
   if out="$(bash install.sh --dry-run --minimal $variant 2>&1)"; then
     if printf '%s' "$out" | grep -qE "would download:.*codeload\.github\.com/jtlgrowth/hire|skill hire already installed"; then

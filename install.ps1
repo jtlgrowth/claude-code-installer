@@ -19,7 +19,7 @@
 .NOTES
     Piped usage can still pass options via environment variables:
       $env:CCI_PRESET  = 'jtl'
-      $env:CCI_SKILLS  = 'hire'
+      $env:CCI_SKILLS  = 'hire,setup'
       $env:CCI_MINIMAL = '1'
       $env:CCI_YES     = '1'
       $env:CCI_DRY_RUN = '1'
@@ -63,6 +63,11 @@ $SkillCatalog = @{
     hire = @{
         Url    = 'https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main'
         Member = 'hire-main/skills/hire'
+        Strip  = 2
+    }
+    setup = @{
+        Url    = 'https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main'
+        Member = 'hire-main/skills/setup'
         Strip  = 2
     }
 }
