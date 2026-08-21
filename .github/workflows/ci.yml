@@ -79,6 +79,15 @@ jobs:
           $env:CCI_SKILLS = 'hire,setup'
           ./install.ps1 -DryRun -Yes
 
+      # The cmd.exe form documented in the README, run through a real cmd.exe.
+      # A quoting mistake here is invisible from pwsh - cmd has its own rules for
+      # quotes and for the pipe - and would only surface on a student's machine.
+      - name: The Command Prompt one-liner parses in cmd.exe
+        shell: cmd
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:CCI_SKILLS='hire,setup'; $env:CCI_DRY_RUN='1'; $env:CCI_YES='1'; ./install.ps1"
+          if errorlevel 1 exit /b 1
+
       # The Windows half of the student one-liner. This is the only job that
       # runs it on Windows at all, so it downloads and extracts for real.
       - name: Install the hire skill for real

@@ -252,7 +252,10 @@ info "system: $OS ($ARCH)"
 if [ "$OS" = "gitbash" ]; then
   warn "Git Bash detected. The native Windows installer is the better path:"
   say "    irm $REPO_RAW/install.ps1 | iex"
-  say "  Continuing anyway — package-manager steps will be skipped."
+  say "  Continuing anyway — apt/brew steps do not apply here."
+  # No Unix package manager exists under Git Bash, so the normal prerequisite
+  # path is off. Node is handled separately below via winget, because a Git
+  # Bash install with no Node leaves every skill script unrunnable.
   MINIMAL=1
 fi
 
@@ -396,6 +399,43 @@ node_major() {
   v="$(node --version 2>/dev/null || true)"   # v22.11.0
   v="${v#v}"; v="${v%%.*}"
   [ -n "$v" ] && printf '%s' "$v" || printf '0'
+}
+
+# Git Bash has no apt/brew, but the Windows box underneath it usually has
+# winget. This is the only prerequisite worth reaching across for: without Node
+# the skills install fine and then fail the moment one runs a script.
+install_node_gitbash() {
+  step "Prerequisites"
+
+  if have node && [ "$(node_major)" -ge "$NODE_MIN_MAJOR" ]; then
+    ALREADY+=("node $(node --version 2>/dev/null)")
+    ok "node already installed"
+    return 0
+  fi
+
+  if ! have winget; then
+    SKIPPED+=("node (no winget)")
+    warn "winget is not available, so Node cannot be installed from here"
+    say "     get it from https://nodejs.org/en/download, then re-open Git Bash"
+    return 0
+  fi
+
+  if ! ask "Install Node LTS with winget?"; then
+    SKIPPED+=("node (declined)")
+    return 0
+  fi
+
+  info "installing Node LTS"
+  if run winget install --id OpenJS.NodeJS.LTS --exact --silent \
+       --accept-package-agreements --accept-source-agreements; then
+    INSTALLED+=("Node LTS")
+    # winget writes PATH to the Windows registry; this bash process was started
+    # before that and will not see it, so do not pretend a re-check would pass.
+    ok "Node LTS installed — open a NEW Git Bash window to use it"
+  else
+    SKIPPED+=("node (install failed)")
+    warn "winget could not install Node — get it from https://nodejs.org/en/download"
+  fi
 }
 
 install_prereqs() {
@@ -707,6 +747,8 @@ main() {
   # installs without one, so skip the prerequisites and carry on.
   if setup_pkg_manager; then
     install_prereqs
+  elif [ "$OS" = "gitbash" ]; then
+    install_node_gitbash
   fi
   install_claude
   fix_path

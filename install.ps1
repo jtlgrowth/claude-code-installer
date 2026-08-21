@@ -12,6 +12,11 @@
     irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 
 .EXAMPLE
+    # From Command Prompt (cmd.exe), including the Windows Terminal cmd profile,
+    # where the PowerShell one-liner above is a syntax error:
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex"
+
+.EXAMPLE
     # With options, download first (a piped script cannot take parameters):
     irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 -OutFile install.ps1
     .\install.ps1 -Preset jtl
@@ -161,6 +166,90 @@ Write-Info "system: Windows ($arch), PowerShell $($PSVersionTable.PSVersion)"
 
 # ------------------------------------------------------------- prereqs ------
 
+# Rebuild $env:Path from the registry. An installer that just wrote a PATH entry
+# did so in the registry, not in this already-running process, so without this
+# every check right after an install reports "not found" and lies.
+function Sync-PathFromRegistry {
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $rebuilt = (@($machine, $user) | Where-Object { $_ }) -join ';'
+    if ($rebuilt) { $env:Path = $rebuilt }
+}
+
+function Get-NodeMajor {
+    if (-not (Test-Command 'node')) { return 0 }
+    try { return [int](((node --version) -replace '^v', '') -split '\.')[0] } catch { return 0 }
+}
+
+# Node straight from nodejs.org, no package manager involved. This is the path
+# for boxes with no winget - Windows 10 before 1809, LTSC images, and machines
+# where the Store is policy-blocked - which is exactly where "install Node
+# yourself" leaves someone with a Claude Code that cannot run a single skill
+# script. The version is queried, never hardcoded, so this does not rot.
+function Install-NodeViaMsi {
+    $msiArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+
+    if ($DryRun) {
+        Write-Host "  would run: download the latest Node LTS $msiArch .msi from nodejs.org and msiexec /qn it" -ForegroundColor DarkGray
+        return $true
+    }
+
+    $version = $null
+    try {
+        # index.json is newest-first, and an LTS entry carries the codename
+        # string while current releases carry the boolean false.
+        $index = Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -UseBasicParsing
+        foreach ($rel in $index) {
+            if ($rel.lts -is [string] -and $rel.lts) {
+                $major = [int](($rel.version -replace '^v', '') -split '\.')[0]
+                if ($major -ge $NodeMinMajor) { $version = $rel.version }
+                break
+            }
+        }
+    } catch {
+        Write-Warn2 "could not reach nodejs.org to find the current Node LTS"
+        return $false
+    }
+
+    if (-not $version) {
+        Write-Warn2 "nodejs.org lists no LTS at or above v$NodeMinMajor"
+        return $false
+    }
+
+    $msiUrl = "https://nodejs.org/dist/$version/node-$version-$msiArch.msi"
+    $msiPath = Join-Path $env:TEMP "node-$version-$msiArch.msi"
+    Write-Info "downloading Node $version ($msiArch) from nodejs.org"
+    try {
+        Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath -UseBasicParsing
+    } catch {
+        Write-Warn2 "download failed: $msiUrl"
+        return $false
+    }
+
+    # /qn is the only sane mode here: this script is usually running inside an
+    # irm|iex pipe with no console to click a wizard in.
+    Write-Info "installing Node $version (msiexec, silent)"
+    $proc = Start-Process -FilePath 'msiexec.exe' `
+        -ArgumentList @('/i', "`"$msiPath`"", '/qn', '/norestart') `
+        -Wait -PassThru
+    Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+
+    if ($proc.ExitCode -ne 0) {
+        Write-Warn2 "msiexec exited $($proc.ExitCode) - Node was not installed"
+        return $false
+    }
+
+    Sync-PathFromRegistry
+    if ((Get-NodeMajor) -lt $NodeMinMajor) {
+        # The MSI landed but PATH has not caught up in this process. Not a
+        # failure - just something a new window fixes.
+        Write-Ok "Node $version installed (open a new terminal to use it)"
+    } else {
+        Write-Ok "Node $(node --version) installed"
+    }
+    return $true
+}
+
 function Test-WinGetPackage {
     param([string]$Id)
     try {
@@ -181,14 +270,29 @@ function Install-Prerequisite {
     }
 
     # winget ships as App Installer on Windows 10 1809+ / 11. Side-loading the
-    # MSIX from a script is where Windows installers go to die, so we stop and
-    # point at the Store instead of guessing.
+    # MSIX from a script is where Windows installers go to die, so we do not
+    # try. Node is the one prerequisite worth installing the hard way anyway:
+    # without it every skill that ships a script is dead on arrival, so it gets
+    # a direct-from-nodejs.org MSI path while git and ripgrep stay advisory.
     if (-not (Test-Command 'winget')) {
-        Write-Warn2 "winget is not available, so prerequisites cannot be installed automatically."
-        Write-Host "    Install 'App Installer' from the Microsoft Store, then re-run this script:"
+        Write-Warn2 "winget is not available, so git/ripgrep cannot be installed automatically."
+        Write-Host "    Install 'App Installer' from the Microsoft Store to get them:"
         Write-Host "    https://apps.microsoft.com/detail/9nblggh4nns1"
+        $script:Skipped.Add("git/ripgrep (winget missing)")
+
+        if ((Get-NodeMajor) -ge $NodeMinMajor) {
+            Write-Ok "Node $(node --version) already installed"
+            $script:Already.Add("node $(node --version)")
+        } elseif (-not (Confirm-Action "Install Node LTS from nodejs.org?")) {
+            $script:Skipped.Add("Node LTS (declined)")
+        } elseif (Install-NodeViaMsi) {
+            $script:Installed.Add("Node LTS")
+        } else {
+            $script:Skipped.Add("Node LTS (install failed)")
+            Write-Host "     install it by hand from https://nodejs.org/en/download"
+        }
+
         Write-Host "    Claude Code itself will still be installed below."
-        $script:Skipped.Add("prerequisites (winget missing)")
         return
     }
 
@@ -203,8 +307,7 @@ function Install-Prerequisite {
 
         if (Test-Command $p.Cmd) {
             if ($p.Cmd -eq 'node') {
-                $major = 0
-                try { $major = [int](((node --version) -replace '^v', '') -split '\.')[0] } catch { $major = 0 }
+                $major = Get-NodeMajor
                 if ($major -ge $NodeMinMajor) {
                     $needsInstall = $false
                     $script:Already.Add("node $(node --version)")
@@ -242,6 +345,12 @@ function Install-Prerequisite {
         if ($installed) {
             $script:Installed.Add($p.Label)
             Write-Ok "$($p.Label) installed"
+        } elseif ($p.Cmd -eq 'node' -and (Install-NodeViaMsi)) {
+            # winget's Node package fails often enough on locked-down boxes
+            # (source agreements, blocked msstore) that giving up here would
+            # strand the one prerequisite the skills actually need.
+            Write-Warn2 "winget could not install Node - fell back to the nodejs.org MSI"
+            $script:Installed.Add($p.Label)
         } else {
             $script:Skipped.Add("$($p.Label) (install failed)")
             Write-Warn2 "could not install $($p.Label) - continuing"
@@ -279,9 +388,7 @@ function Update-SessionPath {
         return
     }
 
-    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+    Sync-PathFromRegistry
 
     if (($env:Path -split ';') -notcontains $binDir) {
         $env:Path = "$binDir;$env:Path"
@@ -409,7 +516,8 @@ function Install-Skill {
     # skips the Node install, so say so rather than leaving a skill that cannot run.
     if (-not (Test-Command 'node')) {
         Write-Warn2 "node is not installed - skills that ship scripts will not run"
-        Write-Host "     install Node $NodeMinMajor+ and open a new PowerShell window"
+        Write-Host "     re-run this installer without -Minimal, or get Node $NodeMinMajor+ from"
+        Write-Host "     https://nodejs.org/en/download - then open a new PowerShell window"
     }
 }
 

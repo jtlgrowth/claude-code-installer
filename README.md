@@ -42,6 +42,17 @@ curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/mai
 irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 ```
 
+**Windows (Command Prompt / `cmd.exe`)**
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex"
+```
+
+Windows Terminal opens whichever profile is set as the default, and on plenty of machines that is
+Command Prompt, not PowerShell. The PowerShell line pasted into `cmd` fails with
+`'irm' is not recognized`; this one works in either, and `-ExecutionPolicy Bypass` also clears the
+"running scripts is disabled on this system" error without changing a machine-wide setting.
+
 Then open a new terminal and run `claude`. Sign in with `/login`.
 
 ### Read it before you pipe it
@@ -67,10 +78,10 @@ notepad install.ps1
 
 | Step | macOS | Windows | Linux / WSL |
 | --- | --- | --- | --- |
-| Package manager | Homebrew (installed if missing) | winget (must already exist) | apt / dnf / pacman / zypper |
+| Package manager | Homebrew (installed if missing) | winget (Node still installs without it) | apt / dnf / pacman / zypper |
 | Build tools | Xcode Command Line Tools | — | — |
 | `git` | via Homebrew | `Git.Git` | via system package manager |
-| Node LTS (for MCP servers) | via Homebrew | `OpenJS.NodeJS.LTS` | via system package manager |
+| Node LTS (for MCP servers) | via Homebrew | `OpenJS.NodeJS.LTS`, falling back to the nodejs.org `.msi` | via system package manager |
 | `ripgrep` (fast search) | via Homebrew | `BurntSushi.ripgrep.MSVC` | via system package manager |
 | Claude Code | `curl -fsSL https://claude.ai/install.sh \| bash` | `irm https://claude.ai/install.ps1 \| iex` | same as macOS |
 | `PATH` | appended to your shell rc, once | refreshed from the registry | appended to your shell rc, once |

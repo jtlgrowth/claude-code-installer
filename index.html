@@ -65,10 +65,18 @@ for nothing and take a few minutes.</p>
 </div>
 
 <div class="card">
-  <h3><span class="os">Windows</span></h3>
+  <h3><span class="os">Windows</span> — PowerShell</h3>
   <p class="note">Open <strong>PowerShell</strong> (press the Windows key, type
   "PowerShell", press Enter).</p>
 <pre><button class="copy">copy</button><code id="win">$env:CCI_SKILLS='hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex</code></pre>
+</div>
+
+<div class="card">
+  <h3><span class="os">Windows</span> — Command Prompt</h3>
+  <p class="note">Use this one if your window says <strong>Command Prompt</strong> or
+  <strong>cmd</strong> at the top, or if the line above gave you a red error. Open it with
+  the Windows key, type "cmd", press Enter.</p>
+<pre><button class="copy">copy</button><code id="wincmd">powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:CCI_SKILLS='hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex"</code></pre>
 </div>
 
 <h2>2. Then</h2>
