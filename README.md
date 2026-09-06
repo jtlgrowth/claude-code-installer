@@ -168,7 +168,7 @@ is written beside it as `.new` and yours is left untouched. See [`preset/README.
 
 ## Skills
 
-`--skills hire` installs [`hire`](https://github.com/jtlgrowth/hire) into
+`--skills hire` installs [`hire`](https://github.com/jtlgrowth/jtl/tree/main/skills/hire) into
 `~/.claude/skills/hire`, which is where Claude Code looks for it — after this, `/hire`
 works in any session.
 

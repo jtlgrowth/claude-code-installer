@@ -122,14 +122,15 @@ ask() {
 skill_source() {
   case "$1" in
     hire)
-      echo "https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main"
-      echo "hire-main/skills/hire"
+      # jtlgrowth/hire was archived 2026-08-29; hire+setup live on in jtlgrowth/jtl.
+      echo "https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main"
+      echo "jtl-main/skills/hire"
       echo "2"
       ;;
     setup)
       # Same repo, second skill: name + standing rules in ~/.claude/CLAUDE.md.
-      echo "https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main"
-      echo "hire-main/skills/setup"
+      echo "https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main"
+      echo "jtl-main/skills/setup"
       echo "2"
       ;;
     *) return 1 ;;
