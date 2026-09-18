@@ -66,13 +66,13 @@ if ($Preset -and $Preset -ne 'jtl') {
 # flag, so an irm|iex installer never becomes an arbitrary-code downloader.
 $SkillCatalog = @{
     hire = @{
-        Url    = 'https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main'
-        Member = 'hire-main/skills/hire'
+        Url    = 'https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main'
+        Member = 'jtl-main/skills/hire'
         Strip  = 2
     }
     setup = @{
-        Url    = 'https://codeload.github.com/jtlgrowth/hire/tar.gz/refs/heads/main'
-        Member = 'hire-main/skills/setup'
+        Url    = 'https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main'
+        Member = 'jtl-main/skills/setup'
         Strip  = 2
     }
 }
@@ -396,6 +396,18 @@ function Update-SessionPath {
     } else {
         Write-Ok "$binDir already on PATH"
     }
+
+    # Make it stick for every new window too. The official installer usually writes
+    # this entry; when it does not, the new window says 'claude' is not recognized and
+    # the fix is buried in Windows settings. Only adds what is missing, so re-runs are
+    # no-ops. -notcontains is case-insensitive, and %VARS% are expanded before comparing.
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $entries  = @(($userPath -split ';') | Where-Object { $_ })
+    $known    = @($entries | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
+    if ($known -notcontains $binDir.TrimEnd('\')) {
+        [Environment]::SetEnvironmentVariable('Path', (@($entries) + $binDir) -join ';', 'User')
+        Write-Ok "added $binDir to your PATH for new windows"
+    }
 }
 
 # --------------------------------------------------------------- preset -----
@@ -521,6 +533,27 @@ function Install-Skill {
     }
 }
 
+# ----------------------------------------------------------------- node -----
+
+# Claude Code runs without Node, but the setup and hire skills do not, and a new
+# user only finds out at their first /setup. So check it where everyone looks: the
+# summary. A warning, not a failure: claude itself is installed and working.
+$script:NodeFix = ''
+function Test-Node {
+    if ($DryRun) { return }
+    Sync-PathFromRegistry   # picks up a Node that winget or the MSI installed this run
+    if ((Get-NodeMajor) -ge $NodeMinMajor) {
+        Write-Ok "node $(node --version) (the setup and hire skills run on it)"
+        return
+    }
+    if (Test-Command 'node') {
+        Write-Warn2 "node $(node --version) is older than v$NodeMinMajor - the setup and hire skills need v$NodeMinMajor+"
+    } else {
+        Write-Warn2 "node is not installed - the setup and hire skills will not run"
+    }
+    $script:NodeFix = 'winget install OpenJS.NodeJS.LTS   (no winget? the Windows installer at https://nodejs.org)'
+}
+
 # --------------------------------------------------------------- verify -----
 
 function Test-Installation {
@@ -568,11 +601,18 @@ function Write-Summary {
         Write-Host "Claude Code is installed and working." -ForegroundColor Green
         Write-Host ""
         Write-Host "Next:"
-        Write-Host "  1. Open a new PowerShell window (so PATH is loaded)."
+        Write-Host "  1. Open a new PowerShell or Command Prompt window (so PATH is loaded)."
         Write-Host "  2. Run:  claude"
         Write-Host "  3. Sign in when prompted with /login"
     } else {
         Write-Host "Install did not verify. See the error above." -ForegroundColor Red
+    }
+
+    if ($script:NodeFix) {
+        Write-Host ""
+        Write-Host "Node.js is missing: the setup and hire skills will not run without it." -ForegroundColor Red
+        Write-Host "  Fix:  $($script:NodeFix)"
+        Write-Host "  Then open a new window and check:  node --version   (v$NodeMinMajor or higher)"
     }
 }
 
@@ -585,6 +625,7 @@ try {
     Install-Preset
     Install-Skill
     $ok = Test-Installation
+    Test-Node
     Write-Summary -Success $ok
     if (-not $ok) { exit 1 }
     exit 0

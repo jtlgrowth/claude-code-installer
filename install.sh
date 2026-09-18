@@ -677,6 +677,35 @@ install_skills() {
   fi
 }
 
+# ------------------------------------------------------------------- node ----
+
+# Claude Code runs without Node, but the setup and hire skills do not, and a new
+# user only finds out at their first /setup. So check it where everyone looks:
+# the summary. A warning, not a failure: claude itself is installed and working.
+NODE_FIX=""
+check_node() {
+  [ "$DRY_RUN" = "1" ] && return 0
+  if have node && [ "$(node_major)" -ge "$NODE_MIN_MAJOR" ]; then
+    ok "node $(node --version) (the setup and hire skills run on it)"
+    return 0
+  fi
+  local i
+  for i in "${INSTALLED[@]+"${INSTALLED[@]}"}"; do
+    # winget writes PATH to the registry; only a new window can see it.
+    [ "$i" = "Node LTS" ] && { NODE_FIX="new-window"; return 0; }
+  done
+  case "$OS" in
+    macos)   NODE_FIX="brew install node   (no Homebrew? the macOS installer at https://nodejs.org)" ;;
+    gitbash) NODE_FIX="winget install OpenJS.NodeJS.LTS   (or the Windows installer at https://nodejs.org)" ;;
+    *)       NODE_FIX="the LTS build from https://nodejs.org/en/download" ;;
+  esac
+  if have node; then
+    warn "node $(node --version) is older than v$NODE_MIN_MAJOR: the setup and hire skills need v$NODE_MIN_MAJOR+"
+  else
+    warn "node is not installed: the setup and hire skills will not run"
+  fi
+}
+
 # ----------------------------------------------------------------- verify ----
 
 verify() {
@@ -739,6 +768,16 @@ summary() {
   else
     printf '%sInstall did not verify.%s See the error above.\n' "$C_RED$C_BOLD" "$C_RESET"
   fi
+
+  if [ "$NODE_FIX" = "new-window" ]; then
+    say ""
+    printf '%sNode.js was just installed.%s Open a new terminal and check:  node --version\n' "$C_YELLOW$C_BOLD" "$C_RESET"
+  elif [ -n "$NODE_FIX" ]; then
+    say ""
+    printf '%sNode.js is missing:%s the setup and hire skills will not run without it.\n' "$C_RED$C_BOLD" "$C_RESET"
+    say "  Fix:  $NODE_FIX"
+    say "  Then open a new terminal and check:  node --version   (v$NODE_MIN_MAJOR or higher)"
+  fi
 }
 
 # ------------------------------------------------------------------- main ----
@@ -758,6 +797,7 @@ main() {
 
   local rc=0
   verify || rc=1
+  check_node
   summary "$rc"
   return "$rc"
 }

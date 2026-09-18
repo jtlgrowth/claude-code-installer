@@ -106,6 +106,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "setup's own tests failed"; exit 1 }
           Write-Host "hire + setup installed and their tests pass on Windows"
 
+      # What a student does next: open a NEW window, check node, run /setup's
+      # script with an alias, then type the alias. A new window builds PATH from
+      # the registry, so rebuilding it here proves the persisted PATH, not this
+      # session's copy. Both shells, because the room uses both.
+      - name: A new window finds claude, node and the ana alias (PowerShell and cmd)
+        shell: pwsh
+        run: |
+          $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          $cv = (claude --version 2>&1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { Write-Error "claude not found from a new window: $cv"; exit 1 }
+          $nv = (node --version 2>&1 | Out-String).Trim()
+          if ($nv -notmatch '^v(2[0-9]|[3-9][0-9])\.') { Write-Error "node from a new window: $nv"; exit 1 }
+          node (Join-Path $env:USERPROFILE '.claude\skills\setup\scripts\setup.mjs') --host claude --name Ana --alias ana
+          if ($LASTEXITCODE -ne 0) { Write-Error "setup --alias failed"; exit 1 }
+          $pv = (ana --version 2>&1 | Out-String).Trim()
+          if ($pv -notmatch 'Claude Code') { Write-Error "ana in PowerShell printed: $pv"; exit 1 }
+          $mv = (cmd /c "ana --version" 2>&1 | Out-String).Trim()
+          if ($mv -notmatch 'Claude Code') { Write-Error "ana in cmd printed: $mv"; exit 1 }
+          Write-Host "new window: claude $cv, node $nv, ana works in PowerShell and cmd"
+          exit 0
+
+      - name: The user PATH entry is persisted exactly once
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:USERPROFILE '.local\bin'
+          $env:CCI_YES = '1'
+          ./install.ps1 *>&1 | Out-Null
+          $n = @(([Environment]::GetEnvironmentVariable('Path','User') -split ';') | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -eq $bin }).Count
+          if ($n -ne 1) { Write-Error "expected $bin once in the user PATH, found $n"; exit 1 }
+          Write-Host "user PATH carries $bin once after a re-run"
+          exit 0
+
       - name: Re-running must leave the skill alone
         shell: pwsh
         run: |
