@@ -137,6 +137,7 @@ Because a piped script has no command-line arguments, every flag has an environm
 | --- | --- | --- |
 | `--preset jtl` | `CCI_PRESET=jtl` | also write a starter `~/.claude` config (never overwrites an existing one) |
 | `--skills hire,setup` | `CCI_SKILLS=hire,setup` | also install agent skills into `~/.claude/skills/` (comma-separated; known: `hire`, `setup`; never overwrites an existing skill) |
+| `--key wk_...` | `CCI_KEY=wk_...` | the workshop key the skills need (asked for on the terminal when missing) |
 | `--minimal` | `CCI_MINIMAL=1` | skip the package manager and `git`/`node`/`ripgrep`; install Claude Code only |
 | `--yes` | `CCI_YES=1` | non-interactive, answer yes to everything |
 | `--dry-run` | `CCI_DRY_RUN=1` | print every command, execute none |
@@ -168,9 +169,13 @@ is written beside it as `.new` and yours is left untouched. See [`preset/README.
 
 ## Skills
 
-`--skills hire` installs [`hire`](https://github.com/jtlgrowth/jtl/tree/main/skills/hire) into
-`~/.claude/skills/hire`, which is where Claude Code looks for it — after this, `/hire`
-works in any session.
+`--skills hire,setup` installs `hire` and `setup` into `~/.claude/skills/`, which is where Claude
+Code looks for them. After this, `/hire` and `/setup` work in any session.
+
+The skills are for JTL workshop attendees. Your workshop host gives you a workshop key
+(it starts with `wk_`); the installer asks for it, or reads `CCI_KEY`. Each key works only
+while its workshop runs, so a key from a past workshop gets "the workshop key was not
+accepted".
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire,setup bash
@@ -180,7 +185,7 @@ curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/mai
 $env:CCI_SKILLS = 'hire,setup'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
 ```
 
-Known skills: `hire`. The list is an allowlist in the script rather than a
+Known skills: `hire`, `setup`. The list is an allowlist in the script rather than a
 `--skills <url>` flag, because a `curl | bash` installer that downloads arbitrary URLs is
 a different and much worse thing than one that installs a named, reviewable list.
 

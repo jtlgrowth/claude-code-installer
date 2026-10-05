@@ -8,6 +8,7 @@
 # Flags (or env vars, for piped use):
 #   --preset jtl   CCI_PRESET=jtl     also write a starter ~/.claude config
 #   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
+#   --key wk_...   CCI_KEY=wk_...     workshop key for the skills (asked for when missing)
 #   --minimal      CCI_MINIMAL=1      skip package manager + git/node/ripgrep
 #   --yes          CCI_YES=1          non-interactive, assume yes
 #   --dry-run      CCI_DRY_RUN=1      print every command, execute none
@@ -27,6 +28,10 @@ NODE_MIN_MAJOR=20
 
 PRESET="${CCI_PRESET:-}"
 SKILLS="${CCI_SKILLS:-}"
+WORKSHOP_KEY="${CCI_KEY:-}"
+# The skills are private: only a workshop key (wk_...) handed out at a JTL workshop opens them,
+# and each key is closed after its workshop. Fixed URL on purpose; see skill_source.
+SKILLS_BASE="https://download.jtlgrowth.com/skills"
 MINIMAL="${CCI_MINIMAL:-0}"
 ASSUME_YES="${CCI_YES:-0}"
 DRY_RUN="${CCI_DRY_RUN:-0}"
@@ -122,16 +127,16 @@ ask() {
 skill_source() {
   case "$1" in
     hire)
-      # jtlgrowth/hire was archived 2026-08-29; hire+setup live on in jtlgrowth/jtl.
-      echo "https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main"
-      echo "jtl-main/skills/hire"
-      echo "2"
+      # Private since 2026-10-06: served behind a workshop key, never from a public repo.
+      echo "$SKILLS_BASE/hire.tgz"
+      echo "hire"
+      echo "0"
       ;;
     setup)
-      # Same repo, second skill: name + standing rules in ~/.claude/CLAUDE.md.
-      echo "https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main"
-      echo "jtl-main/skills/setup"
-      echo "2"
+      # Same feed, second skill: name + standing rules in ~/.claude/CLAUDE.md.
+      echo "$SKILLS_BASE/setup.tgz"
+      echo "setup"
+      echo "0"
       ;;
     *) return 1 ;;
   esac
@@ -149,6 +154,7 @@ macOS / Linux / WSL / Git Bash.
 Flags (or env vars, for piped use):
   --preset jtl   CCI_PRESET=jtl    also write a starter ~/.claude config
   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
+  --key wk_...   CCI_KEY=wk_...    workshop key for the skills (asked for when missing)
   --minimal      CCI_MINIMAL=1     skip package manager + git/node/ripgrep
   --yes          CCI_YES=1         non-interactive, assume yes
   --dry-run      CCI_DRY_RUN=1     print every command, execute none
@@ -192,6 +198,14 @@ while [ $# -gt 0 ]; do
         exit 2
       fi
       shift ;;
+    --key)
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        err "--key needs your workshop key (wk_...)"
+        exit 2
+      fi
+      WORKSHOP_KEY="$2"; shift 2 ;;
+    --key=*)
+      WORKSHOP_KEY="${1#*=}"; shift ;;
     --minimal)  MINIMAL=1; shift ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
@@ -565,6 +579,37 @@ fetch_to() {
   fi
 }
 
+# A skill download with the workshop key. Why a header file: the key never lands in
+# curl's arguments, where any other process could read it from the process list.
+# Echoes the HTTP status (000 when the request never got an answer).
+fetch_skill_to() {
+  local url="$1" dest="$2" auth code
+  auth="$(umask 077; mktemp "${TMPDIR:-/tmp}/cci-auth-XXXXXX")"
+  printf 'Authorization: Bearer %s\n' "$WORKSHOP_KEY" > "$auth"
+  code="$(curl -sSL -H @"$auth" -o "$dest" -w '%{http_code}' "$url" 2>/dev/null)" || true
+  rm -f "$auth"
+  printf '%s' "${code:-000}"
+}
+
+# Asks once for the workshop key, on the terminal even under curl | bash.
+# Returns 1 (and says why) when there is no usable key.
+ask_workshop_key() {
+  if [ -z "$WORKSHOP_KEY" ]; then
+    if [ "$ASSUME_YES" = "1" ] || ! { : < /dev/tty; } 2>/dev/null; then
+      warn "no workshop key: set CCI_KEY=wk_... (your workshop host has it)"
+      return 1
+    fi
+    printf '  Workshop key (starts with wk_, from your workshop host): ' > /dev/tty
+    IFS= read -r WORKSHOP_KEY < /dev/tty || true
+  fi
+  WORKSHOP_KEY="$(printf '%s' "$WORKSHOP_KEY" | tr -d '[:space:]')"
+  if ! printf '%s' "$WORKSHOP_KEY" | grep -Eq '^wk_[A-Za-z0-9_-]{32,128}$'; then
+    warn "that does not look like a workshop key (it starts with wk_)"
+    return 1
+  fi
+  return 0
+}
+
 # Never overwrite an existing config. A person re-running this on a machine they
 # already configured must not lose their settings.
 install_one_preset_file() {
@@ -627,10 +672,20 @@ install_one_skill() {
 
   # Download to a file, then extract. Piping curl straight into tar hides
   # curl's exit code behind tar's, so a 404 looks like a corrupt archive.
-  if ! fetch_to "$url" "$tmp"; then
+  local code
+  code="$(fetch_skill_to "$url" "$tmp")"
+  if [ "$code" != "200" ]; then
     rm -f "$tmp"
-    warn "could not download skill $name"
-    SKIPPED+=("skill $name (download failed)")
+    if [ "$code" = "401" ]; then
+      warn "skill $name: the workshop key was not accepted (mistyped, or that workshop has closed)"
+      SKIPPED+=("skill $name (workshop key not accepted)")
+    elif [ "$code" = "429" ]; then
+      warn "skill $name: too many wrong keys from this network; wait a minute and run again"
+      SKIPPED+=("skill $name (rate limited)")
+    else
+      warn "could not download skill $name (HTTP $code)"
+      SKIPPED+=("skill $name (download failed)")
+    fi
     return 0
   fi
 
@@ -662,6 +717,17 @@ install_skills() {
     warn "tar not found — cannot install skills"
     SKIPPED+=("skills (no tar)")
     return 0
+  fi
+  if [ "$DRY_RUN" != "1" ]; then
+    if ! have curl; then
+      warn "curl not found, so the skills cannot download"
+      SKIPPED+=("skills (no curl)")
+      return 0
+    fi
+    if ! ask_workshop_key; then
+      SKIPPED+=("skills (no workshop key)")
+      return 0
+    fi
   fi
 
   for name in $(printf '%s' "$SKILLS" | tr ',' ' '); do

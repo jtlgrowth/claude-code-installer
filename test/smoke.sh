@@ -110,7 +110,7 @@ head2 "11. --skills"
 for variant in "--skills hire" "--skills=hire" "--skills hire,setup"; do
   # shellcheck disable=SC2086
   if out="$(bash install.sh --dry-run --minimal $variant 2>&1)"; then
-    if printf '%s' "$out" | grep -qE "would download:.*codeload\.github\.com/jtlgrowth/jtl|skill hire already installed"; then
+    if printf '%s' "$out" | grep -qE "would download:.*download\.jtlgrowth\.com/skills/hire\.tgz|skill hire already installed"; then
       pass "'$variant' plans the hire download"
     else
       fail "'$variant' did not plan a skill install"
@@ -121,7 +121,7 @@ for variant in "--skills hire" "--skills=hire" "--skills hire,setup"; do
 done
 
 out="$(CCI_SKILLS=hire bash install.sh --dry-run --minimal 2>&1)"
-if printf '%s' "$out" | grep -qE "would download:.*jtlgrowth/jtl|skill hire already installed"; then
+if printf '%s' "$out" | grep -qE "would download:.*download\.jtlgrowth\.com/skills|skill hire already installed"; then
   pass "CCI_SKILLS=hire works via the env var"
 else
   fail "CCI_SKILLS was ignored"
@@ -150,7 +150,9 @@ for variant in "--skills" "--skills="; do
 done
 
 head2 "13. PowerShell skill install (the real functions, extracted)"
-if command -v pwsh >/dev/null 2>&1; then
+if [ -z "${CCI_KEY:-}" ]; then
+  printf '  \033[33mSKIP\033[0m no CCI_KEY (the skills need a workshop key)\n'
+elif command -v pwsh >/dev/null 2>&1; then
   ps_scratch="$(mktemp -d)"
   if pwsh -NoProfile -File test/skill-install.ps1 ./install.ps1 "$ps_scratch" >/dev/null 2>&1; then
     if [ -f "$ps_scratch/.claude/skills/hire/SKILL.md" ]; then

@@ -19,7 +19,7 @@ $src = Resolve-Path $ScriptPath
 $scratch = $Scratch
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($src, [ref]$null, [ref]$null)
-$wanted = 'Install-OneSkill','Install-Skill','Write-Step','Write-Ok','Write-Warn2','Test-Command'
+$wanted = 'Install-OneSkill','Install-Skill','Get-WorkshopKey','Write-Step','Write-Ok','Write-Warn2','Test-Command'
 $fns = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
        Where-Object { $wanted -contains $_.Name }
 if ($fns.Count -ne $wanted.Count) { Write-Host "  FAIL extracted $($fns.Count)/$($wanted.Count) functions"; exit 1 }
@@ -35,6 +35,9 @@ Invoke-Expression $catalogAst[0].Extent.Text
 $env:USERPROFILE = $scratch
 $env:TEMP = $scratch
 $DryRun = $false
+# The skills sit behind a workshop key; smoke.sh only runs this when CCI_KEY is set.
+$Key = $env:CCI_KEY
+$Yes = $true
 $NodeMinMajor = 20
 $script:Installed = [System.Collections.Generic.List[string]]::new()
 $script:Skipped   = [System.Collections.Generic.List[string]]::new()

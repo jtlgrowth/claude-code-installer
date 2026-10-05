@@ -25,6 +25,7 @@
     Piped usage can still pass options via environment variables:
       $env:CCI_PRESET  = 'jtl'
       $env:CCI_SKILLS  = 'hire,setup'
+      $env:CCI_KEY     = 'wk_...'   # workshop key for the skills (asked for when missing)
       $env:CCI_MINIMAL = '1'
       $env:CCI_YES     = '1'
       $env:CCI_DRY_RUN = '1'
@@ -39,6 +40,9 @@ param(
     # Comma-separated agent skills to install, e.g. 'hire'. Same no-ValidateSet
     # reasoning as -Preset above.
     [string]$Skills = $env:CCI_SKILLS,
+
+    # Workshop key (wk_...) that opens the private skills; asked for when missing.
+    [string]$Key = $env:CCI_KEY,
 
     [switch]$Minimal,
     [switch]$Yes,
@@ -64,16 +68,18 @@ if ($Preset -and $Preset -ne 'jtl') {
 # The skill allowlist: name -> tarball, the directory inside it, and how many
 # leading path components to strip. An allowlist rather than a -Skills <url>
 # flag, so an irm|iex installer never becomes an arbitrary-code downloader.
+# Private since 2026-10-06: served behind a workshop key (wk_...) that each JTL
+# workshop hands out and closes afterwards, never from a public repo.
 $SkillCatalog = @{
     hire = @{
-        Url    = 'https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main'
-        Member = 'jtl-main/skills/hire'
-        Strip  = 2
+        Url    = 'https://download.jtlgrowth.com/skills/hire.tgz'
+        Member = 'hire'
+        Strip  = 0
     }
     setup = @{
-        Url    = 'https://codeload.github.com/jtlgrowth/jtl/tar.gz/refs/heads/main'
-        Member = 'jtl-main/skills/setup'
-        Strip  = 2
+        Url    = 'https://download.jtlgrowth.com/skills/setup.tgz'
+        Member = 'setup'
+        Strip  = 0
     }
 }
 
@@ -481,10 +487,22 @@ function Install-OneSkill {
     # bytes, so piping the gzip stream into tar would corrupt it - this is the
     # whole reason the bash one-liner cannot simply be reused here.
     try {
-        Invoke-RestMethod -Uri $entry.Url -OutFile $tmp
+        Invoke-WebRequest -UseBasicParsing -Uri $entry.Url -OutFile $tmp `
+            -Headers @{ Authorization = "Bearer $script:WorkshopKey" }
     } catch {
-        Write-Warn2 "could not download skill ${Name}: $($_.Exception.Message)"
-        $script:Skipped.Add("skill $Name (download failed)")
+        $code = $null
+        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+        if ($code -eq 401) {
+            Write-Warn2 "skill ${Name}: the workshop key was not accepted (mistyped, or that workshop has closed)"
+            $script:Skipped.Add("skill $Name (workshop key not accepted)")
+        } elseif ($code -eq 429) {
+            Write-Warn2 "skill ${Name}: too many wrong keys from this network; wait a minute and run again"
+            $script:Skipped.Add("skill $Name (rate limited)")
+        } else {
+            Write-Warn2 "could not download skill ${Name}: $($_.Exception.Message)"
+            $script:Skipped.Add("skill $Name (download failed)")
+        }
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
         return
     }
 
@@ -510,6 +528,24 @@ function Install-OneSkill {
     Write-Ok "installed $dest"
 }
 
+# Asks once for the workshop key. Returns $null (and says why) when there is no usable key.
+function Get-WorkshopKey {
+    $value = $Key
+    if (-not $value) {
+        if ($Yes) {
+            Write-Warn2 "no workshop key: set `$env:CCI_KEY = 'wk_...' (your workshop host has it)"
+            return $null
+        }
+        $value = Read-Host '  Workshop key (starts with wk_, from your workshop host)'
+    }
+    $value = ($value -replace '\s', '')
+    if ($value -notmatch '^wk_[A-Za-z0-9_-]{32,128}$') {
+        Write-Warn2 "that does not look like a workshop key (it starts with wk_)"
+        return $null
+    }
+    return $value
+}
+
 function Install-Skill {
     if ($script:SkillNames.Count -eq 0) { return }
     Write-Step "Skills"
@@ -517,9 +553,17 @@ function Install-Skill {
     # tar.exe ships with Windows 10 1803 and later. Older boxes get the npx route.
     if (-not (Test-Command 'tar')) {
         Write-Warn2 "tar not found - cannot install skills"
-        Write-Host "     install them with: npx skills add https://github.com/jtlgrowth/<skill>"
+        Write-Host "     update Windows (tar.exe ships with Windows 10 1803 and later), then run this again"
         $script:Skipped.Add("skills (no tar)")
         return
+    }
+
+    if (-not $DryRun) {
+        $script:WorkshopKey = Get-WorkshopKey
+        if (-not $script:WorkshopKey) {
+            $script:Skipped.Add("skills (no workshop key)")
+            return
+        }
     }
 
     foreach ($name in $script:SkillNames) { Install-OneSkill $name }
