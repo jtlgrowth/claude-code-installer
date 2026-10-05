@@ -105,6 +105,8 @@ $script:Preset    = $Preset
 $script:Installed = [System.Collections.Generic.List[string]]::new()
 $script:Already   = [System.Collections.Generic.List[string]]::new()
 $script:Skipped   = [System.Collections.Generic.List[string]]::new()
+# The workshop key: $null until a skill first needs it, '' when none was given.
+$script:WorkshopKey = $null
 
 # ---------------------------------------------------------------- output ----
 
@@ -480,6 +482,14 @@ function Install-OneSkill {
         return
     }
 
+    # Asked only when a skill actually needs downloading, so a re-run after the
+    # workshop closed still says "already installed" instead of asking for a key.
+    if ($null -eq $script:WorkshopKey) { $script:WorkshopKey = Get-WorkshopKey; if (-not $script:WorkshopKey) { $script:WorkshopKey = '' } }
+    if (-not $script:WorkshopKey) {
+        $script:Skipped.Add("skill $Name (no workshop key)")
+        return
+    }
+
     New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
     $tmp = Join-Path $env:TEMP "cci-skill-$Name.tgz"
 
@@ -556,14 +566,6 @@ function Install-Skill {
         Write-Host "     update Windows (tar.exe ships with Windows 10 1803 and later), then run this again"
         $script:Skipped.Add("skills (no tar)")
         return
-    }
-
-    if (-not $DryRun) {
-        $script:WorkshopKey = Get-WorkshopKey
-        if (-not $script:WorkshopKey) {
-            $script:Skipped.Add("skills (no workshop key)")
-            return
-        }
     }
 
     foreach ($name in $script:SkillNames) { Install-OneSkill $name }

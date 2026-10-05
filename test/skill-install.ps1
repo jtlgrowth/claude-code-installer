@@ -41,6 +41,7 @@ $Yes = $true
 $NodeMinMajor = 20
 $script:Installed = [System.Collections.Generic.List[string]]::new()
 $script:Skipped   = [System.Collections.Generic.List[string]]::new()
+$script:WorkshopKey = $null
 # Use the REAL parsing block from install.ps1, not a hand-made array. Hardcoding
 # @('hire') here is exactly what hid a StrictMode .Count failure that only the
 # genuine one-element pipeline produces.

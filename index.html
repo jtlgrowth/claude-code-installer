@@ -62,6 +62,7 @@ for nothing and take a few minutes.</p>
   <p class="note">Open <strong>Terminal</strong> (press <code>⌘ Space</code>, type
   "Terminal", press Enter).</p>
 <pre><button class="copy">copy</button><code id="mac">curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire bash</code></pre>
+  <p class="note">When it asks, paste the workshop key your host gave you (it starts with <code>wk_</code>).</p>
 </div>
 
 <div class="card">
@@ -69,6 +70,7 @@ for nothing and take a few minutes.</p>
   <p class="note">Open <strong>PowerShell</strong> (press the Windows key, type
   "PowerShell", press Enter).</p>
 <pre><button class="copy">copy</button><code id="win">$env:CCI_SKILLS='hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex</code></pre>
+  <p class="note">When it asks, paste the workshop key your host gave you (it starts with <code>wk_</code>).</p>
 </div>
 
 <div class="card">
@@ -77,6 +79,7 @@ for nothing and take a few minutes.</p>
   <strong>cmd</strong> at the top, or if the line above gave you a red error. Open it with
   the Windows key, type "cmd", press Enter.</p>
 <pre><button class="copy">copy</button><code id="wincmd">powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:CCI_SKILLS='hire'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex"</code></pre>
+  <p class="note">When it asks, paste the workshop key your host gave you (it starts with <code>wk_</code>).</p>
 </div>
 
 <h2>2. Then</h2>
@@ -105,9 +108,9 @@ whichever step failed.</p>
 <pre><button class="copy">copy</button><code>irm https://claude.ai/install.ps1 | iex</code></pre>
 
 <h3>c. The hire skill</h3>
-<pre><button class="copy">copy</button><code>npx skills add https://github.com/jtlgrowth/jtl --skill hire</code></pre>
-<p class="note">Same command on every platform. <code>npx</code> comes with Node, so do
-step (a) first.</p>
+<p class="note">Run the one-line installer at the top again. It skips what is already
+installed, asks for your workshop key, and fetches the skill. The key only works while
+your workshop runs, so ask your host if it says the key was not accepted.</p>
 
 <h3>Still stuck?</h3>
 <ul>
@@ -130,8 +133,8 @@ Both support a dry run that prints every command and executes none:</p>
 
 <hr>
 <p class="note">Source:
-<a href="https://github.com/jtlgrowth/claude-code-installer">claude-code-installer</a> ·
-<a href="https://github.com/jtlgrowth/jtl/tree/main/skills/hire">hire</a>. Both MIT.
+<a href="https://github.com/jtlgrowth/claude-code-installer">claude-code-installer</a> (MIT).
+The hire skill comes with your JTL workshop.
 Running the command again later is safe — it updates Claude Code and leaves anything you
 have already set up alone.</p>
 

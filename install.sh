@@ -29,6 +29,7 @@ NODE_MIN_MAJOR=20
 PRESET="${CCI_PRESET:-}"
 SKILLS="${CCI_SKILLS:-}"
 WORKSHOP_KEY="${CCI_KEY:-}"
+KEY_STATE=""
 # The skills are private: only a workshop key (wk_...) handed out at a JTL workshop opens them,
 # and each key is closed after its workshop. Fixed URL on purpose; see skill_source.
 SKILLS_BASE="https://download.jtlgrowth.com/skills"
@@ -667,6 +668,23 @@ install_one_skill() {
     return 0
   fi
 
+  # Asked only when a skill actually needs downloading, so a re-run after the
+  # workshop closed still says "already installed" instead of asking for a key.
+  if [ -z "$KEY_STATE" ]; then
+    if ! have curl; then
+      warn "curl not found, so the skills cannot download"
+      KEY_STATE="no-curl"
+    elif ask_workshop_key; then
+      KEY_STATE="ok"
+    else
+      KEY_STATE="none"
+    fi
+  fi
+  if [ "$KEY_STATE" != "ok" ]; then
+    SKIPPED+=("skill $name (no workshop key)")
+    return 0
+  fi
+
   run mkdir -p "$HOME/.claude/skills"
   tmp="$(mktemp "${TMPDIR:-/tmp}/cci-skill-XXXXXX.tgz")"
 
@@ -717,17 +735,6 @@ install_skills() {
     warn "tar not found — cannot install skills"
     SKIPPED+=("skills (no tar)")
     return 0
-  fi
-  if [ "$DRY_RUN" != "1" ]; then
-    if ! have curl; then
-      warn "curl not found, so the skills cannot download"
-      SKIPPED+=("skills (no curl)")
-      return 0
-    fi
-    if ! ask_workshop_key; then
-      SKIPPED+=("skills (no workshop key)")
-      return 0
-    fi
   fi
 
   for name in $(printf '%s' "$SKILLS" | tr ',' ' '); do

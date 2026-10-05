@@ -155,6 +155,7 @@ jobs:
       - name: Re-running must leave the skill alone
         shell: pwsh
         run: |
+          if ($env:SKIP_SKILLS -eq '1') { Write-Host "skipped: no workshop key, so no skill to re-run over"; exit 0 }
           $skill = Join-Path $env:USERPROFILE '.claude\skills\hire'
           $before = (Get-ChildItem $skill -Recurse -File).Count
           $env:CCI_SKILLS = 'hire'; $env:CCI_YES = '1'
@@ -195,14 +196,25 @@ jobs:
 
       - uses: actions/checkout@v5
 
+      # The skills sit behind a workshop key (closed after each workshop). With no
+      # CCI_KEY secret the installer must say so and still install Claude Code.
       - name: Install for real, with the skill the students get
         env:
           CCI_YES: '1'
           CCI_SKILLS: hire,setup
-        run: bash install.sh
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          rc=0; bash install.sh > /tmp/install.log 2>&1 || rc=$?
+          cat /tmp/install.log; exit $rc
 
       - name: The hire skill is installed and its own tests pass
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
         run: |
+          if [ -z "$CCI_KEY" ]; then
+            grep -q "no workshop key" /tmp/install.log || { echo "no key, yet the installer did not say so"; exit 1; }
+            echo "no CCI_KEY secret: skills skipped with a plain message"; exit 0
+          fi
           test -f "$HOME/.claude/skills/hire/SKILL.md" || { echo "hire not installed"; exit 1; }
           node "$HOME/.claude/skills/hire/test/tests.mjs"
           test -f "$HOME/.claude/skills/setup/SKILL.md" || { echo "setup not installed"; exit 1; }
