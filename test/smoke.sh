@@ -117,6 +117,7 @@ for variant in "--skills hire" "--skills=hire" "--skills hire,setup"; do
     fi
   else
     fail "'$variant' exited non-zero"
+    printf '%s\n' "$out" | tail -15 | sed 's/^/      | /'
   fi
 done
 

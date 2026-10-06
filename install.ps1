@@ -225,6 +225,16 @@ Write-Info "system: Windows ($arch), PowerShell $($PSVersionTable.PSVersion)"
 # One quick look at every site this run needs, before anything installs. An office
 # filter that blocks one of them otherwise surfaces twenty lines later as a vague
 # download error; here it is one list the person can hand to IT.
+# The HTTP status inside a failed web request, or $null when no answer came back at
+# all. A refused or blocked connection carries no .Response property, and reading a
+# missing property under Set-StrictMode is itself a fatal error, hence PSObject.
+function Get-HttpStatus {
+    param($ErrorRecord)
+    $prop = $ErrorRecord.Exception.PSObject.Properties['Response']
+    if ($null -eq $prop -or $null -eq $prop.Value) { return $null }
+    try { return [int]$prop.Value.StatusCode } catch { return $null }
+}
+
 function Test-Reach {
     param([string]$Url)
     try {
@@ -233,7 +243,7 @@ function Test-Reach {
     } catch {
         # Any HTTP answer (403, 404, 405) means the site is reachable; only a
         # connection that never got an answer means it is blocked.
-        return ($null -ne $_.Exception.Response)
+        return ($null -ne (Get-HttpStatus $_))
     }
 }
 
@@ -642,8 +652,7 @@ function Install-OneSkill {
                 -Headers @{ Authorization = "Bearer $script:WorkshopKey" }
             break
         } catch {
-            $code = $null
-            if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+            $code = Get-HttpStatus $_
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
             if ($code -eq 401) {
                 Write-Warn2 "that workshop key was not accepted (a typo, or the workshop has closed)"
