@@ -10,6 +10,7 @@
 #   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
 #   --key wk_...   CCI_KEY=wk_...     workshop key for the skills (asked for when missing)
 #   --codex        CCI_CODEX=1        also install the OpenAI Codex CLI (skills always go to Codex too)
+#   --no-claude    CCI_NO_CLAUDE=1    Codex users: skip Claude Code, install only the skills
 #   --minimal      CCI_MINIMAL=1      skip package manager + git/node/ripgrep
 #   --yes          CCI_YES=1          non-interactive, assume yes
 #   --dry-run      CCI_DRY_RUN=1      print every command, execute none
@@ -38,6 +39,8 @@ MINIMAL="${CCI_MINIMAL:-0}"
 ASSUME_YES="${CCI_YES:-0}"
 DRY_RUN="${CCI_DRY_RUN:-0}"
 CODEX="${CCI_CODEX:-0}"
+NO_CLAUDE="${CCI_NO_CLAUDE:-0}"
+CLAUDE_FAILED=0
 
 INSTALLED=()
 ALREADY=()
@@ -159,6 +162,7 @@ Flags (or env vars, for piped use):
   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
   --key wk_...   CCI_KEY=wk_...    workshop key for the skills (asked for when missing)
   --codex        CCI_CODEX=1       also install the OpenAI Codex CLI (skills always go to Codex too)
+  --no-claude    CCI_NO_CLAUDE=1   Codex users: skip Claude Code, install only the skills
   --minimal      CCI_MINIMAL=1     skip package manager + git/node/ripgrep
   --yes          CCI_YES=1         non-interactive, assume yes
   --dry-run      CCI_DRY_RUN=1     print every command, execute none
@@ -211,6 +215,7 @@ while [ $# -gt 0 ]; do
     --key=*)
       WORKSHOP_KEY="${1#*=}"; shift ;;
     --codex)    CODEX=1; shift ;;
+    --no-claude) NO_CLAUDE=1; shift ;;
     --minimal)  MINIMAL=1; shift ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
@@ -237,7 +242,7 @@ fi
 
 # -------------------------------------------------------------- preflight ----
 
-step "Claude Code installer"
+if [ "$NO_CLAUDE" = "1" ]; then step "JTL skills installer (Codex)"; else step "Claude Code installer"; fi
 [ "$DRY_RUN" = "1" ] && warn "dry run — nothing will be installed"
 
 # Same reasoning as Anthropic's own installer: this puts everything under
@@ -557,6 +562,11 @@ fix_path() {
 
 install_claude() {
   step "Claude Code"
+  if [ "$NO_CLAUDE" = "1" ]; then
+    info "skipped (--no-claude): Codex only"
+    SKIPPED+=("Claude Code (Codex only)")
+    return 0
+  fi
   local was_present=0
   if have claude; then
     was_present=1
@@ -564,7 +574,13 @@ install_claude() {
     ok "Claude Code already installed — running its updater anyway"
   fi
   info "running the official Anthropic installer"
-  run_sh "curl -fsSL $OFFICIAL_INSTALLER | bash"
+  # A failure here must not stop the skills: a Codex user only needs those.
+  if ! run_sh "curl -fsSL $OFFICIAL_INSTALLER | bash"; then
+    warn "Claude Code did not install; the skills still install below"
+    SKIPPED+=("Claude Code (install failed)")
+    CLAUDE_FAILED=1
+    return 0
+  fi
   [ "$was_present" -eq 0 ] && INSTALLED+=("Claude Code")
   return 0
 }
@@ -856,6 +872,14 @@ verify() {
     return 0
   fi
 
+  # Codex only: what has to work is the skills, which install_skills already proved.
+  if [ "$NO_CLAUDE" = "1" ]; then
+    if have codex; then ok "codex --version -> $(codex --version 2>&1 | head -1)"
+    else warn "codex is not on PATH in this terminal; open a new one and run: codex --version"; fi
+    return 0
+  fi
+  [ "$CLAUDE_FAILED" = "1" ] && return 1
+
   if ! have claude; then
     err "'claude' is not on PATH after installation."
     say ""
@@ -899,6 +923,13 @@ summary() {
   if [ "$DRY_RUN" = "1" ]; then
     printf '%sDry run complete — nothing was installed.%s\n' "$C_YELLOW$C_BOLD" "$C_RESET"
     say "Re-run without --dry-run to actually install."
+  elif [ "$rc" -eq 0 ] && [ "$NO_CLAUDE" = "1" ]; then
+    printf '%sThe skills are installed for Codex.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
+    say ""
+    say "Next:"
+    say "  1. Open a new terminal."
+    say "  2. Run:  codex   (sign in if it asks)"
+    say "  3. Type:  \$setup   then  \$hire"
   elif [ "$rc" -eq 0 ]; then
     printf '%sClaude Code is installed and working.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
     say ""

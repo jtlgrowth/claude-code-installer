@@ -27,6 +27,7 @@
       $env:CCI_SKILLS  = 'hire,setup'
       $env:CCI_KEY     = 'wk_...'   # workshop key for the skills (asked for when missing)
       $env:CCI_CODEX   = '1'        # also install the OpenAI Codex CLI (skills always go to Codex too)
+      $env:CCI_NO_CLAUDE = '1'      # Codex users: skip Claude Code, install only the skills
       $env:CCI_MINIMAL = '1'
       $env:CCI_YES     = '1'
       $env:CCI_DRY_RUN = '1'
@@ -47,6 +48,9 @@ param(
 
     # Also install the OpenAI Codex CLI from npm. The skills go to Codex either way.
     [switch]$Codex,
+
+    # Codex users: do not install or check Claude Code; the skills still install.
+    [switch]$NoClaude,
 
     [switch]$Minimal,
     [switch]$Yes,
@@ -105,6 +109,8 @@ if ($env:CCI_MINIMAL -eq '1') { $Minimal = $true }
 if ($env:CCI_YES     -eq '1') { $Yes     = $true }
 if ($env:CCI_DRY_RUN -eq '1') { $DryRun  = $true }
 if ($env:CCI_CODEX   -eq '1') { $Codex   = $true }
+if ($env:CCI_NO_CLAUDE -eq '1') { $NoClaude = $true }
+$script:ClaudeFailed = $false
 # Read here so a pasted key with stray spaces still works; Get-WorkshopKey reads
 # $Key from script scope, which the analyzer cannot see (PSReviewUnusedParameter).
 if ($Key) { $Key = $Key.Trim() }
@@ -155,7 +161,7 @@ function Confirm-Action {
 
 # -------------------------------------------------------------- preflight ----
 
-Write-Step "Claude Code installer"
+if ($NoClaude) { Write-Step "JTL skills installer (Codex)" } else { Write-Step "Claude Code installer" }
 if ($DryRun) { Write-Warn2 "dry run - nothing will be installed" }
 
 if (-not [Environment]::Is64BitProcess) {
@@ -411,15 +417,29 @@ function Install-Codex {
 
 function Install-ClaudeCode {
     Write-Step "Claude Code"
+    if ($NoClaude) {
+        Write-Info "skipped (-NoClaude): Codex only"
+        $script:Skipped.Add("Claude Code (Codex only)")
+        return
+    }
     $wasPresent = Test-Command 'claude'
     if ($wasPresent) {
         $script:Already.Add("Claude Code $(claude --version 2>$null)")
         Write-Ok "Claude Code already installed - running its updater anyway"
     }
     Write-Info "running the official Anthropic installer"
-    Invoke-Step "irm $OfficialInstaller | iex" {
-        Invoke-Expression (Invoke-RestMethod -Uri $OfficialInstaller)
-    } | Out-Null
+    # A failure here must not stop the skills: a Codex user only needs those.
+    try {
+        Invoke-Step "irm $OfficialInstaller | iex" {
+            Invoke-Expression (Invoke-RestMethod -Uri $OfficialInstaller)
+        } | Out-Null
+    } catch {
+        Write-Warn2 "Claude Code did not install: $($_.Exception.Message)"
+        Write-Host "     the skills still install below; Claude Code can be retried with: irm $OfficialInstaller | iex"
+        $script:Skipped.Add("Claude Code (install failed)")
+        $script:ClaudeFailed = $true
+        return
+    }
     if (-not $wasPresent) { $script:Installed.Add("Claude Code") }
 }
 
@@ -681,6 +701,14 @@ function Test-Installation {
         return $true
     }
 
+    # Codex only: what has to work is the skills, which Install-Skill already proved.
+    if ($NoClaude) {
+        if (Test-Command 'codex') { Write-Ok "codex --version -> $((codex --version 2>&1 | Out-String).Trim())" }
+        else { Write-Warn2 "codex is not on PATH in this window; open a new window and run: codex --version" }
+        return $true
+    }
+    if ($script:ClaudeFailed) { return $false }
+
     if (-not (Test-Command 'claude')) {
         Write-Err "'claude' is not on PATH after installation."
         Write-Host ""
@@ -715,6 +743,13 @@ function Write-Summary {
     if ($DryRun) {
         Write-Host "Dry run complete - nothing was installed." -ForegroundColor Yellow
         Write-Host "Re-run without -DryRun to actually install."
+    } elseif ($Success -and $NoClaude) {
+        Write-Host "The skills are installed for Codex." -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Next:"
+        Write-Host "  1. Open a new PowerShell or Command Prompt window."
+        Write-Host "  2. Run:  codex   (sign in if it asks)"
+        Write-Host '  3. Type:  $setup   then  $hire'
     } elseif ($Success) {
         Write-Host "Claude Code is installed and working." -ForegroundColor Green
         Write-Host ""
@@ -725,6 +760,9 @@ function Write-Summary {
         if ($Codex) { Write-Host '  Using Codex instead: run  codex , sign in, then type  $setup' }
     } else {
         Write-Host "Install did not verify. See the error above." -ForegroundColor Red
+        if ($script:ClaudeFailed -and ($script:Installed | Where-Object { $_ -like 'skill * for Codex' })) {
+            Write-Host 'The skills did install. Using Codex? Open a new window, run  codex , then type  $setup' -ForegroundColor Yellow
+        }
     }
 
     if ($script:NodeFix) {
@@ -738,7 +776,11 @@ function Write-Summary {
 # ----------------------------------------------------------------- main -----
 
 try {
-    Install-Prerequisite
+    # A failed prerequisite (winget, Node) must not stop the skills either.
+    try { Install-Prerequisite } catch {
+        Write-Warn2 "prerequisites step failed: $($_.Exception.Message)"
+        $script:Skipped.Add("prerequisites (failed)")
+    }
     Install-ClaudeCode
     Update-SessionPath
     Install-Codex

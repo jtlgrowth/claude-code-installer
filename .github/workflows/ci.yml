@@ -214,6 +214,26 @@ jobs:
           Write-Host "no CCI_KEY: the typed key installed hire + setup for Claude Code and Codex"
           exit 0
 
+      # Codex users on Windows: -NoClaude installs only the skills, into ~/.codex/skills too.
+      - name: Codex only (CCI_NO_CLAUDE) installs the skills for Codex
+        shell: pwsh
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if (-not $env:CCI_KEY) { Write-Host "skipped: no workshop key secret"; exit 0 }
+          Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:USERPROFILE '.codex\skills') -ErrorAction SilentlyContinue
+          $env:CCI_SKILLS = 'hire,setup'; $env:CCI_NO_CLAUDE = '1'; $env:CCI_YES = '1'
+          $out = ./install.ps1 *>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { Write-Host $out; Write-Error "codex-only run exited $LASTEXITCODE"; exit 1 }
+          if ($out -notmatch 'skills are installed for Codex') { Write-Host $out; Write-Error "codex-only summary missing"; exit 1 }
+          if ($out -match 'running the official Anthropic installer') { Write-Error "codex-only run still ran the Claude Code installer"; exit 1 }
+          foreach ($n in 'hire','setup') {
+            $c = Join-Path $env:USERPROFILE ".codex\skills\$n\SKILL.md"
+            if (-not (Test-Path $c)) { Write-Host $out; Write-Error "$n missing for Codex at $c"; exit 1 }
+          }
+          Write-Host "codex-only: hire + setup in ~/.codex/skills, Claude Code untouched"
+          exit 0
+
   install-linux:
     name: real install (ubuntu container)
     runs-on: ubuntu-latest
