@@ -747,8 +747,13 @@ install_preset() {
 # Skills live in ~/.claude/skills/<name>. That path is what makes /<name> resolve
 # inside Claude Code; anywhere else and the skill is just files on disk.
 install_one_skill() {
-  local name="$1" url member strip dest tmp
-  { read -r url; read -r member; read -r strip; } < <(skill_source "$name")
+  local name="$1" url member strip dest tmp src
+  # Command substitution, not < <(...): a process substitution's child can exit mid-printf,
+  # and bash 3.2 (macOS) does not retry the interrupted write, so the ERR trap fired at random.
+  src="$(skill_source "$name")"
+  { read -r url; read -r member; read -r strip; } <<EOF
+$src
+EOF
   dest="$HOME/.claude/skills/$name"
 
   # Already there: leave it alone and say so. Re-running this installer is

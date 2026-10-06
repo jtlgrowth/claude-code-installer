@@ -389,7 +389,8 @@ jobs:
           [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', 'C:\nope\bash.exe', 'User')
           New-Item -ItemType Directory -Force $bin | Out-Null
           Set-Content -Path (Join-Path $bin 'ana2.cmd') -Value "@rem written by /setup: opens Claude Code as Ana`r`n@claude %*"
-          $cmd = 'Set-Location C:\Windows\System32; irm http://127.0.0.1:8765/w/doctor.ps1 | iex; Write-Host ("PWD-AFTER=" + (Get-Location).Path)'
+          # Single quotes only: Windows PowerShell strips double quotes from a native argument.
+          $cmd = 'Set-Location C:\Windows\System32; irm http://127.0.0.1:8765/w/doctor.ps1 | iex; Write-Host (''PWD-AFTER='' + (Get-Location).Path)'
           $out = powershell -NoProfile -ExecutionPolicy Bypass -Command $cmd *>&1 | Out-String
           Write-Host $out
           foreach ($want in 'moved to', 'to your PATH for new windows', 'pointed to a missing file', "alias 'ana2' opens claude", "PWD-AFTER=$env:USERPROFILE") {
