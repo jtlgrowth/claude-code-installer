@@ -206,11 +206,12 @@ jobs:
           Remove-Item Env:CCI_KEY -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:USERPROFILE '.codex\skills') -ErrorAction SilentlyContinue
           $out = $env:TYPED_KEY | pwsh -NoProfile -Command "`$env:CCI_SKILLS='hire,setup'; ./install.ps1" *>&1 | Out-String
-          if ($out -notmatch 'Workshop key') { Write-Host $out; Write-Error "the installer never asked for the key"; exit 1 }
+          # Read-Host does not echo its prompt when the answer is piped in, so the proof is
+          # the result: CCI_KEY is unset, so these files exist only if the typed key was read.
           foreach ($p in '.claude\skills\hire\SKILL.md','.claude\skills\setup\SKILL.md','.codex\skills\hire\SKILL.md','.codex\skills\setup\SKILL.md') {
             if (-not (Test-Path (Join-Path $env:USERPROFILE $p))) { Write-Host $out; Write-Error "missing $p after typing the key"; exit 1 }
           }
-          Write-Host "asked for the key, and the typed key installed hire + setup for Claude Code and Codex"
+          Write-Host "no CCI_KEY: the typed key installed hire + setup for Claude Code and Codex"
           exit 0
 
   install-linux:
