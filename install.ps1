@@ -59,7 +59,36 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# 'exit' inside irm | iex ends the PowerShell window itself, so the person never sees
+# the summary or the error they were told to screenshot. Run as a file, exit with the
+# code; run through iex, stop with 'break' instead, which leaves the window open
+# (the same reason the Scoop installer uses break).
+function Stop-Installer {
+    param([int]$Code)
+    if ($PSCommandPath) { exit $Code }
+    if ($Code -eq 0) { return }   # success: let the script simply end
+    break
+}
+
+# AppLocker / WDAC machines run PowerShell in Constrained Language Mode, where an
+# installer dies on its first .NET call with an error nobody can act on. First, and
+# with plain cmdlets only, so it runs before anything that mode would block.
+if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+    Write-Host ""
+    Write-Host "error: this PC runs PowerShell in $($ExecutionContext.SessionState.LanguageMode) mode (set by IT), which blocks installers." -ForegroundColor Red
+    Write-Host "    Ask IT to run this line for you, or to allow PowerShell scripts for your account."
+    Stop-Installer 1
+}
 $ProgressPreference = 'SilentlyContinue'
+
+# Windows PowerShell 5.1 on an older .NET still offers only TLS 1.0, which GitHub,
+# claude.ai and nodejs.org refuse ("could not create SSL/TLS secure channel"). Add
+# TLS 1.2 without dropping anything already allowed.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { $null = $_ }
+# Office networks: an authenticating proxy (407) refuses the default anonymous
+# request; hand it the signed-in Windows account, the way a browser would.
+try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } catch { $null = $_ }
 
 $RepoRaw           = 'https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main'
 $OfficialInstaller = 'https://claude.ai/install.ps1'
@@ -70,7 +99,7 @@ if ($Preset -and $Preset -ne 'jtl') {
     # 'Stop' and bury a simple usage mistake in a stack of PowerShell noise.
     # Print it plainly and exit with a code the caller can test.
     [Console]::Error.WriteLine("error: unknown preset: $Preset (only 'jtl' exists)")
-    exit 2
+    Stop-Installer 2
 }
 
 # The skill allowlist: name -> tarball, the directory inside it, and how many
@@ -97,11 +126,11 @@ if ($Skills) {
     # under Set-StrictMode reading .Count on a string is a terminating error.
     # Without it, --skills with exactly one skill - the common case - throws.
     $script:SkillNames = @($Skills.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    foreach ($name in $script:SkillNames) {
-        if (-not $SkillCatalog.ContainsKey($name)) {
-            [Console]::Error.WriteLine("error: unknown skill: $name (known skills: $($SkillCatalog.Keys -join ', '))")
-            exit 2
-        }
+    # Checked outside a loop: Stop-Installer's 'break' would only leave the loop.
+    $unknown = @($script:SkillNames | Where-Object { -not $SkillCatalog.ContainsKey($_) })
+    if ($unknown.Count -gt 0) {
+        [Console]::Error.WriteLine("error: unknown skill: $($unknown[0]) (known skills: $($SkillCatalog.Keys -join ', '))")
+        Stop-Installer 2
     }
 }
 
@@ -110,6 +139,9 @@ if ($env:CCI_YES     -eq '1') { $Yes     = $true }
 if ($env:CCI_DRY_RUN -eq '1') { $DryRun  = $true }
 if ($env:CCI_CODEX   -eq '1') { $Codex   = $true }
 if ($env:CCI_NO_CLAUDE -eq '1') { $NoClaude = $true }
+# Workshop lines (w/*.ps1): install the prerequisites without a Y/n per package, but
+# still ask for the workshop key. -Yes would skip the key prompt too.
+$script:Workshop = ($env:CCI_WORKSHOP -eq '1')
 $script:ClaudeFailed = $false
 # Read here so a pasted key with stray spaces still works; Get-WorkshopKey reads
 # $Key from script scope, which the analyzer cannot see (PSReviewUnusedParameter).
@@ -121,6 +153,9 @@ $script:Already   = [System.Collections.Generic.List[string]]::new()
 $script:Skipped   = [System.Collections.Generic.List[string]]::new()
 # The workshop key: $null until a skill first needs it, '' when none was given.
 $script:WorkshopKey = $null
+$script:KeyRejected = $false
+$script:KeyAsks     = 0   # times a rejected key was asked for again; capped
+$script:KeyPattern  = '^wk_[A-Za-z0-9_-]{32,128}$'
 
 # ---------------------------------------------------------------- output ----
 
@@ -153,7 +188,7 @@ function Invoke-Step {
 # every other one-liner installer does.
 function Confirm-Action {
     param([string]$Question)
-    if ($Yes -or $DryRun) { return $true }
+    if ($Yes -or $DryRun -or $script:Workshop) { return $true }
     if ([Console]::IsInputRedirected) { return $true }
     $reply = Read-Host "$Question [Y/n]"
     return ($reply -notmatch '^(n|no)$')
@@ -164,9 +199,10 @@ function Confirm-Action {
 if ($NoClaude) { Write-Step "JTL skills installer (Codex)" } else { Write-Step "Claude Code installer" }
 if ($DryRun) { Write-Warn2 "dry run - nothing will be installed" }
 
+
 if (-not [Environment]::Is64BitProcess) {
     Write-Err "Claude Code does not support 32-bit Windows."
-    exit 1
+    Stop-Installer 1
 }
 
 # WSL and Git Bash are better served by the bash script; say so rather than
@@ -174,7 +210,7 @@ if (-not [Environment]::Is64BitProcess) {
 if ($env:WSL_DISTRO_NAME) {
     Write-Warn2 "This looks like WSL. Use the bash installer instead:"
     Write-Host "    curl -fsSL $RepoRaw/install.sh | bash"
-    exit 1
+    Stop-Installer 1
 }
 
 $policy = Get-ExecutionPolicy -Scope Process
@@ -185,6 +221,34 @@ if ($policy -in @('Restricted', 'AllSigned')) {
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
 Write-Info "system: Windows ($arch), PowerShell $($PSVersionTable.PSVersion)"
+
+# One quick look at every site this run needs, before anything installs. An office
+# filter that blocks one of them otherwise surfaces twenty lines later as a vague
+# download error; here it is one list the person can hand to IT.
+function Test-Reach {
+    param([string]$Url)
+    try {
+        Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 20 | Out-Null
+        return $true
+    } catch {
+        # Any HTTP answer (403, 404, 405) means the site is reachable; only a
+        # connection that never got an answer means it is blocked.
+        return ($null -ne $_.Exception.Response)
+    }
+}
+
+function Test-Network {
+    if ($DryRun) { return }
+    $sites = [System.Collections.Generic.List[string]]::new()
+    if ($script:SkillNames.Count -gt 0) { $sites.Add('https://download.jtlgrowth.com/healthz') }
+    if (-not $NoClaude) { $sites.Add('https://claude.ai/install.ps1'); $sites.Add('https://downloads.claude.ai') }
+    if ($Codex) { $sites.Add('https://registry.npmjs.org') }
+    $blocked = @($sites | Where-Object { -not (Test-Reach $_) } | ForEach-Object { ([Uri]$_).Host })
+    if ($blocked.Count -eq 0) { Write-Ok "network: every site this needs is reachable"; return }
+    Write-Warn2 "this network cannot reach: $($blocked -join ', ')"
+    Write-Host "     ask IT to allow those sites (or try another Wi-Fi / phone hotspot); continuing anyway"
+}
+Test-Network
 
 # ------------------------------------------------------------- prereqs ------
 
@@ -428,10 +492,15 @@ function Install-ClaudeCode {
         Write-Ok "Claude Code already installed - running its updater anyway"
     }
     Write-Info "running the official Anthropic installer"
-    # A failure here must not stop the skills: a Codex user only needs those.
+    # A failure here must not stop the skills: a Codex user only needs those. It runs
+    # in its own PowerShell process because it ends with 'exit 1' on any failure,
+    # which inside this process would end the whole run before the skills.
+    $psExe = (Get-Process -Id $PID).Path
+    $childCmd = "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; irm $OfficialInstaller | iex"
     try {
         Invoke-Step "irm $OfficialInstaller | iex" {
-            Invoke-Expression (Invoke-RestMethod -Uri $OfficialInstaller)
+            & $psExe -NoProfile -ExecutionPolicy Bypass -Command $childCmd | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "the official installer exited with code $LASTEXITCODE" }
         } | Out-Null
     } catch {
         Write-Warn2 "Claude Code did not install: $($_.Exception.Message)"
@@ -528,11 +597,16 @@ function Install-OneSkill {
     $dest      = Join-Path $skillsDir $Name
 
     # Already there: leave it alone. People re-run this line when the first run
-    # scrolled past, and that must never overwrite a skill they have edited.
+    # scrolled past, and that must never overwrite a skill they have edited. A
+    # folder with no SKILL.md is what an interrupted run leaves; that one is redone.
     if (Test-Path $dest) {
-        Write-Warn2 "skill $Name already installed at $dest - left alone"
-        $script:Skipped.Add("skill $Name (already present)")
-        return
+        if (Test-Path (Join-Path $dest 'SKILL.md')) {
+            Write-Warn2 "skill $Name already installed at $dest - left alone"
+            $script:Skipped.Add("skill $Name (already present)")
+            return
+        }
+        Write-Warn2 "found an unfinished $Name folder from an earlier run - installing it again"
+        if (-not $DryRun) { Remove-Item $dest -Recurse -Force }
     }
 
     if ($DryRun) {
@@ -547,7 +621,8 @@ function Install-OneSkill {
     # workshop closed still says "already installed" instead of asking for a key.
     if ($null -eq $script:WorkshopKey) { $script:WorkshopKey = Get-WorkshopKey; if (-not $script:WorkshopKey) { $script:WorkshopKey = '' } }
     if (-not $script:WorkshopKey) {
-        $script:Skipped.Add("skill $Name (no workshop key)")
+        if ($script:KeyRejected) { $script:Skipped.Add("skill $Name (workshop key not accepted)") }
+        else { $script:Skipped.Add("skill $Name (no workshop key)") }
         return
     }
 
@@ -557,27 +632,47 @@ function Install-OneSkill {
     # Download to a file, then extract. A PowerShell pipeline carries text, not
     # bytes, so piping the gzip stream into tar would corrupt it - this is the
     # whole reason the bash one-liner cannot simply be reused here.
-    try {
-        Invoke-WebRequest -UseBasicParsing -Uri $entry.Url -OutFile $tmp `
-            -Headers @{ Authorization = "Bearer $script:WorkshopKey" }
-    } catch {
-        $code = $null
-        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
-        if ($code -eq 401) {
-            Write-Warn2 "skill ${Name}: the workshop key was not accepted (mistyped, or that workshop has closed)"
-            $script:Skipped.Add("skill $Name (workshop key not accepted)")
-        } elseif ($code -eq 429) {
-            Write-Warn2 "skill ${Name}: too many wrong keys from this network; wait a minute and run again"
-            $script:Skipped.Add("skill $Name (rate limited)")
-        } else {
-            Write-Warn2 "could not download skill ${Name}: $($_.Exception.Message)"
-            $script:Skipped.Add("skill $Name (download failed)")
+    # A wrong key asks again (a room full of people pasting makes typos), a rate
+    # limit waits it out once, and a dropped connection gets one more try, so one
+    # hiccup does not mean starting the whole line over.
+    $waited = $false; $retried = $false
+    while ($true) {
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $entry.Url -OutFile $tmp `
+                -Headers @{ Authorization = "Bearer $script:WorkshopKey" }
+            break
+        } catch {
+            $code = $null
+            if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            if ($code -eq 401) {
+                Write-Warn2 "that workshop key was not accepted (a typo, or the workshop has closed)"
+                $again = $null
+                if ((Test-CanAsk) -and $script:KeyAsks -lt 3) { $script:KeyAsks++; $again = Read-WorkshopKey }
+                if ($again) { $script:WorkshopKey = $again; continue }
+                $script:WorkshopKey = ''; $script:KeyRejected = $true
+                $script:Skipped.Add("skill $Name (workshop key not accepted)")
+            } elseif ($code -eq 429 -and -not $waited) {
+                Write-Warn2 "too many wrong keys from this network (one office Wi-Fi counts as one); waiting 60 seconds, then trying again"
+                Start-Sleep -Seconds 61; $waited = $true; continue
+            } elseif ($code -eq 429) {
+                Write-Warn2 "skill ${Name}: still rate limited; wait a minute and run the same line again"
+                $script:Skipped.Add("skill $Name (rate limited)")
+            } elseif ($null -eq $code -and -not $retried) {
+                Write-Warn2 "the download dropped ($($_.Exception.Message)); trying once more"
+                Start-Sleep -Seconds 3; $retried = $true; continue
+            } else {
+                Write-Warn2 "could not download skill ${Name}: $($_.Exception.Message)"
+                if ($null -eq $code) { Write-Host "     if this office blocks download.jtlgrowth.com, try a phone hotspot" }
+                $script:Skipped.Add("skill $Name (download failed)")
+            }
+            return
         }
-        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-        return
     }
 
-    & tar -xzf $tmp -C $skillsDir --strip-components=$($entry.Strip) $entry.Member 2>$null
+    # Windows' own tar.exe by full path: with Git's Unix tools on PATH, plain 'tar'
+    # can be GNU tar, which reads 'C:\...' as a remote host and fails.
+    & $script:TarExe -xzf $tmp -C $skillsDir --strip-components=$($entry.Strip) $entry.Member 2>$null
     $tarOk = ($LASTEXITCODE -eq 0)
     Remove-Item $tmp -Force -ErrorAction SilentlyContinue
 
@@ -599,22 +694,33 @@ function Install-OneSkill {
     Write-Ok "installed $dest"
 }
 
-# Asks once for the workshop key. Returns $null (and says why) when there is no usable key.
-function Get-WorkshopKey {
-    $value = $Key
-    if (-not $value) {
-        if ($Yes) {
-            Write-Warn2 "no workshop key: set `$env:CCI_KEY = 'wk_...' (your workshop host has it)"
-            return $null
-        }
-        $value = Read-Host '  Workshop key (starts with wk_, from your workshop host)'
+# May the key be asked for at all: not under -Yes, which promises no prompts.
+function Test-CanAsk { return (-not $Yes) }
+
+# Prompts for the key, up to 3 tries. Returns $null when none of them looked like a key.
+function Read-WorkshopKey {
+    for ($i = 1; $i -le 3; $i++) {
+        # Piped input that ran out makes Read-Host fail rather than wait; treat it as blank.
+        try { $value = Read-Host '  Workshop key (starts with wk_, from your workshop host)' } catch { $value = '' }
+        $value = ("$value" -replace '\s', '')
+        if ($value -match $script:KeyPattern) { return $value }
+        if (-not $value) { Write-Warn2 "nothing was pasted" }
+        else { Write-Warn2 "that does not look like a workshop key (it starts with wk_ and is one long line)" }
+        if ($i -lt 3) { Write-Host "     paste it again (right-click pastes in most windows)" }
     }
-    $value = ($value -replace '\s', '')
-    if ($value -notmatch '^wk_[A-Za-z0-9_-]{32,128}$') {
-        Write-Warn2 "that does not look like a workshop key (it starts with wk_)"
+    return $null
+}
+
+# The key from CCI_KEY / -Key, or asked for. Returns $null (and says why) when there is none.
+function Get-WorkshopKey {
+    $value = ("$Key" -replace '\s', '')
+    if ($value -match $script:KeyPattern) { return $value }
+    if ($value) { Write-Warn2 "CCI_KEY does not look like a workshop key (it starts with wk_)" }
+    if ($Yes) {
+        Write-Warn2 "no workshop key: set `$env:CCI_KEY = 'wk_...' (your workshop host has it)"
         return $null
     }
-    return $value
+    return Read-WorkshopKey
 }
 
 # Codex reads skills from $CODEX_HOME\skills (default ~\.codex\skills), not from
@@ -632,10 +738,12 @@ function Copy-SkillToCodex {
         return
     }
     if (-not (Test-Path (Join-Path $src 'SKILL.md'))) { return }
-    if (Test-Path $dest) {
+    if (Test-Path (Join-Path $dest 'SKILL.md')) {
         $script:Skipped.Add("skill $Name for Codex (already present)")
         return
     }
+    # An unfinished copy from an earlier run: redo it, or Copy-Item nests into it.
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
     Copy-Item -Recurse -Path $src -Destination $dest
     if (Test-Path (Join-Path $dest 'SKILL.md')) {
@@ -652,7 +760,9 @@ function Install-Skill {
     Write-Step "Skills"
 
     # tar.exe ships with Windows 10 1803 and later. Older boxes get the npx route.
-    if (-not (Test-Command 'tar')) {
+    $sysTar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    $script:TarExe = if (Test-Path $sysTar) { $sysTar } else { 'tar' }
+    if (-not (Test-Path $sysTar) -and -not (Test-Command 'tar')) {
         Write-Warn2 "tar not found - cannot install skills"
         Write-Host "     update Windows (tar.exe ships with Windows 10 1803 and later), then run this again"
         $script:Skipped.Add("skills (no tar)")
@@ -694,18 +804,33 @@ function Test-Node {
 
 # --------------------------------------------------------------- verify -----
 
+# The requested skills that are not on disk where the chosen app reads them. The
+# summary must never say "installed" over a skill that is not there.
+$script:MissingSkills = @()
+function Test-SkillsOnDisk {
+    $root = if ($NoClaude) {
+        Join-Path $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }) 'skills'
+    } else { Join-Path (Join-Path $env:USERPROFILE '.claude') 'skills' }
+    $script:MissingSkills = @($script:SkillNames | Where-Object { -not (Test-Path (Join-Path (Join-Path $root $_) 'SKILL.md')) })
+    foreach ($n in $script:SkillNames) {
+        if ($script:MissingSkills -notcontains $n) { Write-Ok "skill $n is in $root" }
+    }
+    return ($script:MissingSkills.Count -eq 0)
+}
+
 function Test-Installation {
     Write-Step "Verify"
     if ($DryRun) {
         Write-Host "  would run: claude --version; claude doctor" -ForegroundColor DarkGray
         return $true
     }
+    $skillsOk = Test-SkillsOnDisk
 
-    # Codex only: what has to work is the skills, which Install-Skill already proved.
+    # Codex only: what has to work is the skills.
     if ($NoClaude) {
         if (Test-Command 'codex') { Write-Ok "codex --version -> $((codex --version 2>&1 | Out-String).Trim())" }
         else { Write-Warn2 "codex is not on PATH in this window; open a new window and run: codex --version" }
-        return $true
+        return $skillsOk
     }
     if ($script:ClaudeFailed) { return $false }
 
@@ -728,7 +853,7 @@ function Test-Installation {
     Write-Host ""
     Write-Info "claude doctor"
     claude doctor 2>&1 | ForEach-Object { Write-Host "    $_" }
-    return $true
+    return $skillsOk
 }
 
 function Write-Summary {
@@ -747,17 +872,22 @@ function Write-Summary {
         Write-Host "The skills are installed for Codex." -ForegroundColor Green
         Write-Host ""
         Write-Host "Next:"
-        Write-Host "  1. Open a new PowerShell or Command Prompt window."
-        Write-Host "  2. Run:  codex   (sign in if it asks)"
+        Write-Host "  1. If Codex was open, quit it and open it again (it reads skills at start)."
+        Write-Host "  2. Codex app: start a new chat. Codex CLI: open a new window and run  codex"
         Write-Host '  3. Type:  $setup   then  $hire'
     } elseif ($Success) {
         Write-Host "Claude Code is installed and working." -ForegroundColor Green
         Write-Host ""
         Write-Host "Next:"
         Write-Host "  1. Open a new PowerShell or Command Prompt window (so PATH is loaded)."
-        Write-Host "  2. Run:  claude"
-        Write-Host "  3. Sign in when prompted with /login"
+        Write-Host "  2. Run:  claude   (sign in when it asks; if Claude was already open, close it first)"
+        if ($script:SkillNames.Count -gt 0) { Write-Host "  3. Type:  /setup   then  /hire" }
+        else { Write-Host "  3. Sign in when prompted with /login" }
         if ($Codex) { Write-Host '  Using Codex instead: run  codex , sign in, then type  $setup' }
+    } elseif ($script:MissingSkills.Count -gt 0) {
+        Write-Host "Not done yet: the $($script:MissingSkills -join ' and ') skill did not install." -ForegroundColor Red
+        Write-Host "  The reason is in the Skipped list above. Fix it, then paste the SAME line again;"
+        Write-Host "  whatever already installed is kept, so only the missing part runs."
     } else {
         Write-Host "Install did not verify. See the error above." -ForegroundColor Red
         if ($script:ClaudeFailed -and ($script:Installed | Where-Object { $_ -like 'skill * for Codex' })) {
@@ -789,8 +919,8 @@ try {
     $ok = Test-Installation
     Test-Node
     Write-Summary -Success $ok
-    if (-not $ok) { exit 1 }
-    exit 0
+    if (-not $ok) { Stop-Installer 1 }
+    Stop-Installer 0
 } catch {
     Write-Err $_.Exception.Message
     Write-Host ""
@@ -798,5 +928,5 @@ try {
     Write-Host "  1. Re-run with `$env:CCI_DRY_RUN='1' to see the commands without executing them."
     Write-Host "  2. Claude Code itself can always be installed directly:"
     Write-Host "       irm $OfficialInstaller | iex"
-    exit 1
+    Stop-Installer 1
 }

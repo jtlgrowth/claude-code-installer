@@ -48,7 +48,7 @@ jobs:
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
           $bad = 0
-          foreach ($f in @('./install.ps1', './test/skill-install.ps1')) {
+          foreach ($f in @('./install.ps1', './test/skill-install.ps1', './w/claude.ps1', './w/codex.ps1')) {
             $results = Invoke-ScriptAnalyzer -Path $f -Severity Error,Warning `
               -ExcludeRule PSAvoidUsingWriteHost,PSUseShouldProcessForStateChangingFunctions,PSAvoidUsingInvokeExpression
             if ($results) { Write-Host "findings in $f"; $results | Format-Table -AutoSize | Out-String | Write-Host; $bad++ }
@@ -232,6 +232,164 @@ jobs:
             if (-not (Test-Path $c)) { Write-Host $out; Write-Error "$n missing for Codex at $c"; exit 1 }
           }
           Write-Host "codex-only: hire + setup in ~/.codex/skills, Claude Code untouched"
+          exit 0
+
+      # ---- worst cases for the line the room pastes (w/claude.ps1, w/codex.ps1) ----
+      # The line is fetched from GitHub in the room; here the same line fetches this
+      # commit from a local server, so the test proves the code being pushed.
+      - name: Serve this commit locally for the paste-line tests
+        shell: pwsh
+        run: |
+          Start-Process python -ArgumentList '-m','http.server','8765','--bind','127.0.0.1' -WindowStyle Hidden
+          Start-Sleep -Seconds 4
+          $code = (Invoke-WebRequest http://127.0.0.1:8765/w/codex.ps1 -UseBasicParsing).StatusCode
+          if ($code -ne 200) { Write-Error "local server answered $code"; exit 1 }
+          "CCI_BASE=http://127.0.0.1:8765" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: "Worst case: the Codex line pasted into Command Prompt"
+        shell: cmd
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if "%CCI_KEY%"=="" (echo skipped: no workshop key secret& exit /b 0)
+          rmdir /s /q "%USERPROFILE%\.claude\skills" 2>nul
+          rmdir /s /q "%USERPROFILE%\.codex\skills" 2>nul
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072; irm http://127.0.0.1:8765/w/codex.ps1 | iex" > "%RUNNER_TEMP%\cmd-line.log" 2>&1
+          type "%RUNNER_TEMP%\cmd-line.log"
+          findstr /c:"skills are installed for Codex" "%RUNNER_TEMP%\cmd-line.log" >nul || (echo summary missing& exit /b 1)
+          if not exist "%USERPROFILE%\.codex\skills\hire\SKILL.md" (echo hire missing for Codex& exit /b 1)
+          if not exist "%USERPROFILE%\.codex\skills\setup\SKILL.md" (echo setup missing for Codex& exit /b 1)
+          echo cmd: the Codex line installed hire + setup for Codex
+
+      # Leftovers from an earlier attempt in the same window must not steer the line.
+      - name: "Worst case: the Claude line pasted into Git Bash, with stale variables"
+        shell: bash
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if [ -z "$CCI_KEY" ]; then echo "skipped: no workshop key secret"; exit 0; fi
+          export CCI_NO_CLAUDE=1 CCI_YES=1 CCI_SKILLS=nope CCI_DRY_RUN=1
+          rm -rf "$HOME/.claude/skills" "$HOME/.codex/skills"
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072; irm http://127.0.0.1:8765/w/claude.ps1 | iex" > "$RUNNER_TEMP/bash-line.log" 2>&1 || true
+          cat "$RUNNER_TEMP/bash-line.log"
+          grep -q 'running the official Anthropic installer' "$RUNNER_TEMP/bash-line.log" || { echo "stale CCI_NO_CLAUDE skipped Claude Code"; exit 1; }
+          grep -q 'Claude Code is installed and working' "$RUNNER_TEMP/bash-line.log" || { echo "no success summary"; exit 1; }
+          for n in hire setup; do test -f "$HOME/.claude/skills/$n/SKILL.md" || { echo "$n missing"; exit 1; }; done
+          echo "git bash: the Claude line ignored stale variables and installed Claude Code + hire + setup"
+
+      # The room types the key. Here: a half-pasted key, then a wrong key, then the
+      # right one, all in one run of the line inside a PowerShell window.
+      - name: "Worst case: a typo, then a wrong key, then the right key (PowerShell)"
+        shell: pwsh
+        env:
+          TYPED_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if (-not $env:TYPED_KEY) { Write-Host "skipped: no workshop key secret"; exit 0 }
+          Remove-Item Env:CCI_KEY -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:USERPROFILE '.codex\skills') -ErrorAction SilentlyContinue
+          $answers = "wk_half`n" + 'wk_' + ('x' * 43) + "`n" + $env:TYPED_KEY + "`n"
+          $out = $answers | powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072; irm http://127.0.0.1:8765/w/codex.ps1 | iex" *>&1 | Out-String
+          if ($out -notmatch 'does not look like a workshop key') { Write-Host $out; Write-Error "the half key was not caught"; exit 1 }
+          if ($out -notmatch 'workshop key was not accepted') { Write-Host $out; Write-Error "the wrong key was not refused"; exit 1 }
+          foreach ($n in 'hire','setup') {
+            $c = Join-Path $env:USERPROFILE ".codex\skills\$n\SKILL.md"
+            if (-not (Test-Path $c)) { Write-Host $out; Write-Error "$n missing after the right key on the third try"; exit 1 }
+          }
+          Write-Host "typo, wrong key, right key: asked again each time, then installed"
+          exit 0
+
+      # An interrupted first run leaves folders with no SKILL.md; with Git's Unix tools
+      # first on PATH, plain 'tar' is GNU tar, which reads C:\ as a remote host.
+      - name: "Worst case: half-installed folders from an earlier run, GNU tar first on PATH"
+        shell: pwsh
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if (-not $env:CCI_KEY) { Write-Host "skipped: no workshop key secret"; exit 0 }
+          Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:USERPROFILE '.codex\skills') -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.claude\skills\hire') | Out-Null
+          Set-Content (Join-Path $env:USERPROFILE '.claude\skills\hire\partial.tmp') 'x'
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE '.codex\skills\setup') | Out-Null
+          $env:Path = 'C:\Program Files\Git\usr\bin;' + $env:Path
+          Write-Host "plain tar here is: $((Get-Command tar).Source)"
+          $env:CCI_SKILLS = 'hire,setup'; $env:CCI_NO_CLAUDE = '1'; $env:CCI_YES = '1'
+          $out = ./install.ps1 *>&1 | Out-String
+          $rc = $LASTEXITCODE
+          if ($rc -ne 0) { Write-Host $out; Write-Error "exited $rc"; exit 1 }
+          if ($out -notmatch 'unfinished hire folder') { Write-Host $out; Write-Error "the half folder was not noticed"; exit 1 }
+          foreach ($p in '.claude\skills\hire\SKILL.md','.claude\skills\setup\SKILL.md','.codex\skills\hire\SKILL.md','.codex\skills\setup\SKILL.md') {
+            if (-not (Test-Path (Join-Path $env:USERPROFILE $p))) { Write-Host $out; Write-Error "missing $p"; exit 1 }
+          }
+          Write-Host "half folders repaired; Windows tar used even with GNU tar first on PATH"
+          exit 0
+
+      # Real names: spaces, a dot and an n with a tilde in the Windows profile path.
+      - name: "Worst case: a profile folder with spaces and non-English letters"
+        shell: pwsh
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if (-not $env:CCI_KEY) { Write-Host "skipped: no workshop key secret"; exit 0 }
+          $fake = Join-Path $env:RUNNER_TEMP ("Ma. Paula " + [char]0x00D1 + "i" + [char]0x00F1 + "o")
+          New-Item -ItemType Directory -Force $fake | Out-Null
+          $env:USERPROFILE = $fake
+          $env:CCI_SKILLS = 'hire,setup'; $env:CCI_NO_CLAUDE = '1'; $env:CCI_YES = '1'
+          $out = ./install.ps1 *>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { Write-Host $out; Write-Error "exited $LASTEXITCODE"; exit 1 }
+          foreach ($p in '.claude\skills\hire\SKILL.md','.codex\skills\setup\SKILL.md') {
+            if (-not (Test-Path -LiteralPath (Join-Path $fake $p))) { Write-Host $out; Write-Error "missing $p under $fake"; exit 1 }
+          }
+          Write-Host "installed under: $fake"
+          exit 0
+
+      # The line in the invite email is plain irm | iex in a PowerShell window. 'exit'
+      # there closes the window on the summary; the installer must stop, not exit.
+      # A do/while(false) catches a 'break', while an 'exit' would end this process.
+      - name: "Worst case: irm | iex must leave the PowerShell window open"
+        shell: powershell
+        run: |
+          $env:CCI_DRY_RUN = '1'; $env:CCI_YES = '1'
+          $ok = powershell -NoProfile -Command 'Invoke-Expression (Get-Content -Raw ./install.ps1); Write-Host WINDOW-STILL-OPEN' *>&1 | Out-String
+          if ($ok -notmatch 'WINDOW-STILL-OPEN') { Write-Host $ok; Write-Error "a finished run closed the window"; exit 1 }
+          $env:CCI_SKILLS = 'nope'
+          $bad = powershell -NoProfile -Command 'do { Invoke-Expression (Get-Content -Raw ./install.ps1) } while ($false); Write-Host WINDOW-STILL-OPEN' *>&1 | Out-String
+          if ($bad -notmatch 'unknown skill') { Write-Host $bad; Write-Error "the bad skill was not reported"; exit 1 }
+          if ($bad -notmatch 'WINDOW-STILL-OPEN') { Write-Host $bad; Write-Error "a failed run closed the window"; exit 1 }
+          Write-Host "irm | iex: success and failure both leave the window open"
+          exit 0
+
+      - name: "Worst case: PowerShell locked to Constrained Language Mode by IT"
+        shell: powershell
+        run: |
+          $out = powershell -NoProfile -Command '$ExecutionContext.SessionState.LanguageMode = ''ConstrainedLanguage''; Invoke-Expression (Get-Content -Raw ./install.ps1)' *>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'ConstrainedLanguage mode \(set by IT\)') { Write-Error "no plain message under Constrained Language Mode"; exit 1 }
+          Write-Host "constrained language mode gets one plain sentence"
+          exit 0
+
+      # Last: it edits the hosts file. An office filter that blocks the skills site
+      # must be named up front, and the run must not end on "installed".
+      - name: "Worst case: the office network blocks download.jtlgrowth.com"
+        shell: pwsh
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          $hosts = 'C:\Windows\System32\drivers\etc\hosts'
+          $orig = Get-Content -Raw $hosts
+          Add-Content $hosts "`r`n0.0.0.0 download.jtlgrowth.com"
+          ipconfig /flushdns | Out-Null
+          Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:USERPROFILE '.codex\skills') -ErrorAction SilentlyContinue
+          if (-not $env:CCI_KEY) { $env:CCI_KEY = 'wk_' + ('x' * 43) }
+          $env:CCI_SKILLS = 'hire,setup'; $env:CCI_NO_CLAUDE = '1'; $env:CCI_YES = '1'
+          $out = ./install.ps1 *>&1 | Out-String
+          $rc = $LASTEXITCODE
+          Set-Content -NoNewline $hosts $orig; ipconfig /flushdns | Out-Null
+          Write-Host $out
+          if ($out -notmatch 'cannot reach: download\.jtlgrowth\.com') { Write-Error "the blocked site was not named up front"; exit 1 }
+          if ($out -match 'skills are installed for Codex') { Write-Error "claimed success with the skills site blocked"; exit 1 }
+          if ($out -notmatch 'did not install') { Write-Error "no plain not-done line"; exit 1 }
+          if ($rc -eq 0) { Write-Error "exited 0 with no skills"; exit 1 }
+          Write-Host "blocked site named up front; run ends not-done with exit $rc"
           exit 0
 
   install-linux:

@@ -32,6 +32,8 @@ PRESET="${CCI_PRESET:-}"
 SKILLS="${CCI_SKILLS:-}"
 WORKSHOP_KEY="${CCI_KEY:-}"
 KEY_STATE=""
+KEY_ASKS=0        # times a refused key was asked for again; capped at 3
+MISSING_SKILLS=""
 # The skills are private: only a workshop key (wk_...) handed out at a JTL workshop opens them,
 # and each key is closed after its workshop. Fixed URL on purpose; see skill_source.
 SKILLS_BASE="https://download.jtlgrowth.com/skills"
@@ -631,10 +633,12 @@ copy_skill_to_codex() {
     return 0
   fi
   [ -f "$src/SKILL.md" ] || return 0
-  if [ -e "$dest" ]; then
+  if [ -f "$dest/SKILL.md" ]; then
     SKIPPED+=("skill $name for Codex (already present)")
     return 0
   fi
+  # An unfinished copy from an earlier run: redo it, or cp -R nests into it.
+  [ -e "$dest" ] && rm -rf "$dest"
   mkdir -p "$skills_dir"
   cp -R "$src" "$dest"
   if [ -f "$dest/SKILL.md" ]; then
@@ -675,21 +679,34 @@ fetch_skill_to() {
 
 # Asks once for the workshop key, on the terminal even under curl | bash.
 # Returns 1 (and says why) when there is no usable key.
-ask_workshop_key() {
-  if [ -z "$WORKSHOP_KEY" ]; then
-    if [ "$ASSUME_YES" = "1" ] || ! { : < /dev/tty; } 2>/dev/null; then
-      warn "no workshop key: set CCI_KEY=wk_... (your workshop host has it)"
-      return 1
-    fi
+is_key() { printf '%s' "$1" | grep -Eq '^wk_[A-Za-z0-9_-]{32,128}$'; }
+can_ask() { [ "$ASSUME_YES" != "1" ] && { : < /dev/tty; } 2>/dev/null; }
+
+# Prompts on the terminal (even under curl | bash), up to 3 tries.
+read_workshop_key() {
+  local i value
+  for i in 1 2 3; do
     printf '  Workshop key (starts with wk_, from your workshop host): ' > /dev/tty
-    IFS= read -r WORKSHOP_KEY < /dev/tty || true
-  fi
+    value=""; IFS= read -r value < /dev/tty || true
+    value="$(printf '%s' "$value" | tr -d '[:space:]')"
+    if is_key "$value"; then WORKSHOP_KEY="$value"; return 0; fi
+    if [ -z "$value" ]; then warn "nothing was pasted"
+    else warn "that does not look like a workshop key (it starts with wk_ and is one long line)"; fi
+    [ "$i" -lt 3 ] && say "     paste it again (Cmd+V)" > /dev/tty
+  done
+  return 1
+}
+
+# The key from CCI_KEY / --key, or asked for. Returns 1 (and says why) when there is none.
+ask_workshop_key() {
   WORKSHOP_KEY="$(printf '%s' "$WORKSHOP_KEY" | tr -d '[:space:]')"
-  if ! printf '%s' "$WORKSHOP_KEY" | grep -Eq '^wk_[A-Za-z0-9_-]{32,128}$'; then
-    warn "that does not look like a workshop key (it starts with wk_)"
+  is_key "$WORKSHOP_KEY" && return 0
+  [ -n "$WORKSHOP_KEY" ] && warn "CCI_KEY does not look like a workshop key (it starts with wk_)"
+  if ! can_ask; then
+    warn "no workshop key: set CCI_KEY=wk_... (your workshop host has it)"
     return 1
   fi
-  return 0
+  read_workshop_key
 }
 
 # Never overwrite an existing config. A person re-running this on a machine they
@@ -737,10 +754,15 @@ install_one_skill() {
   # Already there: leave it alone and say so. Re-running this installer is
   # something people do (the first run scrolls past), and it must never
   # overwrite a skill someone has been editing.
+  # A folder with no SKILL.md is what an interrupted run leaves; that one is redone.
   if [ -e "$dest" ]; then
-    warn "skill $name already installed at $dest — left alone"
-    SKIPPED+=("skill $name (already present)")
-    return 0
+    if [ -f "$dest/SKILL.md" ]; then
+      warn "skill $name already installed at $dest — left alone"
+      SKIPPED+=("skill $name (already present)")
+      return 0
+    fi
+    warn "found an unfinished $name folder from an earlier run, installing it again"
+    [ "$DRY_RUN" = "1" ] || rm -rf "$dest"
   fi
 
   if [ "$DRY_RUN" = "1" ]; then
@@ -761,7 +783,10 @@ install_one_skill() {
       KEY_STATE="none"
     fi
   fi
-  if [ "$KEY_STATE" != "ok" ]; then
+  if [ "$KEY_STATE" = "rejected" ]; then
+    SKIPPED+=("skill $name (workshop key not accepted)")
+    return 0
+  elif [ "$KEY_STATE" != "ok" ]; then
     SKIPPED+=("skill $name (no workshop key)")
     return 0
   fi
@@ -771,22 +796,37 @@ install_one_skill() {
 
   # Download to a file, then extract. Piping curl straight into tar hides
   # curl's exit code behind tar's, so a 404 looks like a corrupt archive.
-  local code
-  code="$(fetch_skill_to "$url" "$tmp")"
-  if [ "$code" != "200" ]; then
+  # A wrong key asks again, a rate limit waits it out once, and a dropped
+  # connection gets one more try, so one hiccup does not mean starting over.
+  local code waited=0 retried=0
+  while :; do
+    code="$(fetch_skill_to "$url" "$tmp")"
+    [ "$code" = "200" ] && break
     rm -f "$tmp"
     if [ "$code" = "401" ]; then
-      warn "skill $name: the workshop key was not accepted (mistyped, or that workshop has closed)"
+      warn "that workshop key was not accepted (a typo, or the workshop has closed)"
+      if can_ask && [ "$KEY_ASKS" -lt 3 ]; then
+        KEY_ASKS=$((KEY_ASKS + 1))
+        read_workshop_key && continue
+      fi
+      KEY_STATE="rejected"
       SKIPPED+=("skill $name (workshop key not accepted)")
+    elif [ "$code" = "429" ] && [ "$waited" = "0" ]; then
+      warn "too many wrong keys from this network (one office Wi-Fi counts as one); waiting 60 seconds, then trying again"
+      sleep 61; waited=1; continue
     elif [ "$code" = "429" ]; then
-      warn "skill $name: too many wrong keys from this network; wait a minute and run again"
+      warn "skill $name: still rate limited; wait a minute and run the same line again"
       SKIPPED+=("skill $name (rate limited)")
+    elif [ "$code" = "000" ] && [ "$retried" = "0" ]; then
+      warn "the download dropped; trying once more"
+      sleep 3; retried=1; continue
     else
       warn "could not download skill $name (HTTP $code)"
+      [ "$code" = "000" ] && say "     if this network blocks download.jtlgrowth.com, try a phone hotspot"
       SKIPPED+=("skill $name (download failed)")
     fi
     return 0
-  fi
+  done
 
   if ! tar -xzf "$tmp" -C "$HOME/.claude/skills" --strip-components="$strip" "$member" 2>/dev/null; then
     rm -f "$tmp"
@@ -872,11 +912,20 @@ verify() {
     return 0
   fi
 
-  # Codex only: what has to work is the skills, which install_skills already proved.
+  # The summary must never say "installed" over a requested skill that is not there.
+  local root n skills_ok=0
+  if [ "$NO_CLAUDE" = "1" ]; then root="${CODEX_HOME:-$HOME/.codex}/skills"; else root="$HOME/.claude/skills"; fi
+  MISSING_SKILLS=""
+  for n in $(printf '%s' "$SKILLS" | tr ',' ' '); do
+    if [ -f "$root/$n/SKILL.md" ]; then ok "skill $n is in $root"
+    else MISSING_SKILLS="${MISSING_SKILLS:+$MISSING_SKILLS and }$n"; skills_ok=1; fi
+  done
+
+  # Codex only: what has to work is the skills.
   if [ "$NO_CLAUDE" = "1" ]; then
     if have codex; then ok "codex --version -> $(codex --version 2>&1 | head -1)"
     else warn "codex is not on PATH in this terminal; open a new one and run: codex --version"; fi
-    return 0
+    return "$skills_ok"
   fi
   [ "$CLAUDE_FAILED" = "1" ] && return 1
 
@@ -900,7 +949,7 @@ verify() {
   say ""
   info "claude doctor"
   claude doctor 2>&1 | sed 's/^/    /' || warn "claude doctor reported problems (see above)"
-  return 0
+  return "$skills_ok"
 }
 
 summary() {
@@ -927,19 +976,23 @@ summary() {
     printf '%sThe skills are installed for Codex.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
     say ""
     say "Next:"
-    say "  1. Open a new terminal."
-    say "  2. Run:  codex   (sign in if it asks)"
+    say "  1. If Codex was open, quit it and open it again (it reads skills at start)."
+    say "  2. Codex app: start a new chat. Codex CLI: open a new terminal and run  codex"
     say "  3. Type:  \$setup   then  \$hire"
   elif [ "$rc" -eq 0 ]; then
     printf '%sClaude Code is installed and working.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
     say ""
     say "Next:"
     say "  1. Open a new terminal (so PATH is loaded)."
-    say "  2. Run:  claude"
-    say "  3. Sign in when prompted with /login"
+    say "  2. Run:  claude   (sign in when it asks; if Claude was already open, close it first)"
+    if [ -n "$SKILLS" ]; then say "  3. Type:  /setup   then  /hire"; else say "  3. Sign in when prompted with /login"; fi
     if [ "$CODEX" = "1" ]; then
       say "  Using Codex instead: run  codex , sign in, then type  \$setup"
     fi
+  elif [ -n "$MISSING_SKILLS" ]; then
+    printf '%sNot done yet:%s the %s skill did not install.\n' "$C_RED$C_BOLD" "$C_RESET" "$MISSING_SKILLS"
+    say "  The reason is in the Skipped list above. Fix it, then paste the SAME line again;"
+    say "  whatever already installed is kept, so only the missing part runs."
   else
     printf '%sInstall did not verify.%s See the error above.\n' "$C_RED$C_BOLD" "$C_RESET"
   fi

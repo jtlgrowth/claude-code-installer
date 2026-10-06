@@ -182,9 +182,27 @@ accepted".
 curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire,setup bash
 ```
 
+On Windows, the workshop lines. Each works pasted into PowerShell:
+
 ```powershell
-$env:CCI_SKILLS = 'hire,setup'; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/w/claude.ps1 | iex   # Claude Code users
+irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/w/codex.ps1 | iex    # Codex users (no Claude Code)
 ```
+
+The same, as one line that also works in Command Prompt and Git Bash (no `$`, so no shell
+rewrites it; TLS 1.2 forced for old Windows PowerShell):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072; irm https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/w/codex.ps1 | iex"
+```
+
+What the lines survive, each proven in CI on Windows: a typo or a wrong key (asked again,
+up to 3 times), a rate limit from a room on one Wi-Fi (waits 60 seconds once), folders left
+half-done by an earlier run (redone), Git's GNU tar first on PATH, a profile folder with
+spaces and accented letters, variables left over from an earlier try, Constrained Language
+Mode (one plain sentence), and an office filter blocking the skills site (named up front;
+the run ends "Not done yet", never "installed"). The window stays open on the summary:
+the installer never calls `exit` when run through `iex`.
 
 Known skills: `hire`, `setup`. The list is an allowlist in the script rather than a
 `--skills <url>` flag, because a `curl | bash` installer that downloads arbitrary URLs is
