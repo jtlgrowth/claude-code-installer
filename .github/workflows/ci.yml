@@ -348,6 +348,9 @@ jobs:
       - name: "Worst case: irm | iex must leave the PowerShell window open"
         shell: powershell
         run: |
+          # The child's 'unknown skill' line goes to stderr on purpose; under the runner's
+          # Stop preference Windows PowerShell would turn that into a fatal error here.
+          $ErrorActionPreference = 'Continue'
           $env:CCI_DRY_RUN = '1'; $env:CCI_YES = '1'
           $ok = powershell -NoProfile -Command 'Invoke-Expression (Get-Content -Raw ./install.ps1); Write-Host WINDOW-STILL-OPEN' *>&1 | Out-String
           if ($ok -notmatch 'WINDOW-STILL-OPEN') { Write-Host $ok; Write-Error "a finished run closed the window"; exit 1 }
@@ -361,6 +364,7 @@ jobs:
       - name: "Worst case: PowerShell locked to Constrained Language Mode by IT"
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Continue'
           $out = powershell -NoProfile -Command '$ExecutionContext.SessionState.LanguageMode = ''ConstrainedLanguage''; Invoke-Expression (Get-Content -Raw ./install.ps1)' *>&1 | Out-String
           Write-Host $out
           if ($out -notmatch 'ConstrainedLanguage mode \(set by IT\)') { Write-Error "no plain message under Constrained Language Mode"; exit 1 }
