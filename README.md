@@ -182,6 +182,13 @@ accepted".
 curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/install.sh | CCI_SKILLS=hire,setup bash
 ```
 
+On a Mac, the workshop lines (no underscore or variable in them, so a copy out of a PDF stays whole):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/w/claude.sh | bash   # Claude Code users
+curl -fsSL https://raw.githubusercontent.com/jtlgrowth/claude-code-installer/main/w/codex.sh | bash    # Codex users
+```
+
 On Windows, the workshop lines. Each works pasted into PowerShell:
 
 ```powershell
