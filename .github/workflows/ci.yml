@@ -261,6 +261,21 @@ jobs:
           if not exist "%USERPROFILE%\.codex\skills\setup\SKILL.md" (echo setup missing for Codex& exit /b 1)
           echo cmd: the Codex line installed hire + setup for Codex
 
+      # The short fallback printed in the e-module (a PDF line must fit one printed row).
+      - name: "Worst case: the module's short Command Prompt line"
+        shell: cmd
+        env:
+          CCI_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if "%CCI_KEY%"=="" (echo skipped: no workshop key secret& exit /b 0)
+          rmdir /s /q "%USERPROFILE%\.claude\skills" 2>nul
+          powershell -ExecutionPolicy Bypass -c "irm http://127.0.0.1:8765/w/claude.ps1|iex" > "%RUNNER_TEMP%\short-line.log" 2>&1
+          type "%RUNNER_TEMP%\short-line.log"
+          findstr /c:"Claude Code is installed and working" "%RUNNER_TEMP%\short-line.log" >nul || (echo summary missing& exit /b 1)
+          if not exist "%USERPROFILE%\.claude\skills\hire\SKILL.md" (echo hire missing& exit /b 1)
+          if not exist "%USERPROFILE%\.claude\skills\setup\SKILL.md" (echo setup missing& exit /b 1)
+          echo cmd: the short module line installed Claude Code + hire + setup
+
       # Leftovers from an earlier attempt in the same window must not steer the line.
       - name: "Worst case: the Claude line pasted into Git Bash, with stale variables"
         shell: bash
