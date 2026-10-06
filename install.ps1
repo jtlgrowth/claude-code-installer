@@ -105,6 +105,9 @@ if ($env:CCI_MINIMAL -eq '1') { $Minimal = $true }
 if ($env:CCI_YES     -eq '1') { $Yes     = $true }
 if ($env:CCI_DRY_RUN -eq '1') { $DryRun  = $true }
 if ($env:CCI_CODEX   -eq '1') { $Codex   = $true }
+# Read here so a pasted key with stray spaces still works; Get-WorkshopKey reads
+# $Key from script scope, which the analyzer cannot see (PSReviewUnusedParameter).
+if ($Key) { $Key = $Key.Trim() }
 
 $script:Preset    = $Preset
 $script:Installed = [System.Collections.Generic.List[string]]::new()
