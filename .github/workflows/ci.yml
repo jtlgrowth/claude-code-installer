@@ -387,7 +387,7 @@ jobs:
           $env:CCI_SKILLS = 'hire,setup'; $env:CCI_NO_CLAUDE = '1'; $env:CCI_YES = '1'
           $out = ./install.ps1 *>&1 | Out-String
           $rc = $LASTEXITCODE
-          Set-Content -NoNewline $hosts $orig; ipconfig /flushdns | Out-Null
+          [IO.File]::WriteAllText($hosts, $orig); ipconfig /flushdns | Out-Null
           Write-Host $out
           if ($out -notmatch 'cannot reach: download\.jtlgrowth\.com') { Write-Error "the blocked site was not named up front"; exit 1 }
           if ($out -match 'skills are installed for Codex') { Write-Error "claimed success with the skills site blocked"; exit 1 }
