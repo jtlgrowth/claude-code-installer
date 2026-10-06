@@ -48,7 +48,7 @@ jobs:
         run: |
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
           $bad = 0
-          foreach ($f in @('./install.ps1', './test/skill-install.ps1', './w/claude.ps1', './w/codex.ps1')) {
+          foreach ($f in @('./install.ps1', './test/skill-install.ps1', './w/claude.ps1', './w/codex.ps1', './w/doctor.ps1')) {
             $results = Invoke-ScriptAnalyzer -Path $f -Severity Error,Warning `
               -ExcludeRule PSAvoidUsingWriteHost,PSUseShouldProcessForStateChangingFunctions,PSAvoidUsingInvokeExpression
             if ($results) { Write-Host "findings in $f"; $results | Format-Table -AutoSize | Out-String | Write-Host; $bad++ }
@@ -374,6 +374,35 @@ jobs:
           if ($bad -notmatch 'unknown skill') { Write-Host $bad; Write-Error "the bad skill was not reported"; exit 1 }
           if ($bad -notmatch 'WINDOW-STILL-OPEN') { Write-Host $bad; Write-Error "a failed run closed the window"; exit 1 }
           Write-Host "irm | iex: success and failure both leave the window open"
+          exit 0
+
+      # Path problems after the install: PowerShell opened as admin (System32), ~/.local/bin
+      # dropped from PATH, CLAUDE_CODE_GIT_BASH_PATH pointing nowhere. The doctor line fixes
+      # all three, says so, and a second run finds nothing left to fix.
+      - name: "Worst case: path errors after the install, fixed by the doctor line"
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $bin = Join-Path $env:USERPROFILE '.local\bin'
+          $u = @(([Environment]::GetEnvironmentVariable('Path','User') -split ';') | Where-Object { $_ -and ([Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ne $bin) })
+          [Environment]::SetEnvironmentVariable('Path', ($u -join ';'), 'User')
+          [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', 'C:\nope\bash.exe', 'User')
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          Set-Content -Path (Join-Path $bin 'ana2.cmd') -Value "@rem written by /setup: opens Claude Code as Ana`r`n@claude %*"
+          $cmd = 'Set-Location C:\Windows\System32; irm http://127.0.0.1:8765/w/doctor.ps1 | iex; Write-Host ("PWD-AFTER=" + (Get-Location).Path)'
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -Command $cmd *>&1 | Out-String
+          Write-Host $out
+          foreach ($want in 'moved to', 'to your PATH for new windows', 'pointed to a missing file', "alias 'ana2' opens claude", "PWD-AFTER=$env:USERPROFILE") {
+            if ($out -notmatch [regex]::Escape($want)) { Write-Error "doctor output lacks: $want"; exit 1 }
+          }
+          $known = @(([Environment]::GetEnvironmentVariable('Path','User') -split ';') | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
+          if ($known -notcontains $bin) { Write-Error "~/.local/bin not back on the user PATH"; exit 1 }
+          $gb = [Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH','User')
+          if (-not (Test-Path -LiteralPath $gb)) { Write-Error "CLAUDE_CODE_GIT_BASH_PATH still points nowhere: $gb"; exit 1 }
+          $again = powershell -NoProfile -ExecutionPolicy Bypass -Command 'irm http://127.0.0.1:8765/w/doctor.ps1 | iex' *>&1 | Out-String
+          if ($again -match 'fixed ') { Write-Host $again; Write-Error "a second run still fixed something"; exit 1 }
+          Remove-Item (Join-Path $bin 'ana2.cmd') -Force
+          Write-Host "doctor: System32, PATH and Git Bash path fixed; second run clean; Git Bash at $gb"
           exit 0
 
       - name: "Worst case: PowerShell locked to Constrained Language Mode by IT"
