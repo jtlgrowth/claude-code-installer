@@ -108,7 +108,16 @@ jobs:
             Write-Host "no CCI_KEY secret: a wrong key is refused by the live server; skill steps skip"
             exit 0
           }
+          $env:CCI_CODEX = '1'
           ./install.ps1
+          $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          foreach ($n in 'hire','setup') {
+            $c = Join-Path $env:USERPROFILE ".codex\skills\$n\SKILL.md"
+            if (-not (Test-Path $c)) { Write-Error "$n not copied for Codex at $c"; exit 1 }
+          }
+          $xv = (codex --version 2>&1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { Write-Error "codex not found after -Codex install: $xv"; exit 1 }
+          Write-Host "Codex $xv, hire + setup in ~/.codex/skills"
           $skill = Join-Path $env:USERPROFILE '.claude\skills\hire\SKILL.md'
           if (-not (Test-Path $skill)) { Write-Error "hire skill not installed at $skill"; exit 1 }
           node (Join-Path $env:USERPROFILE '.claude\skills\hire\test\tests.mjs')

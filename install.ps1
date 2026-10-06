@@ -26,6 +26,7 @@
       $env:CCI_PRESET  = 'jtl'
       $env:CCI_SKILLS  = 'hire,setup'
       $env:CCI_KEY     = 'wk_...'   # workshop key for the skills (asked for when missing)
+      $env:CCI_CODEX   = '1'        # also install the OpenAI Codex CLI (skills always go to Codex too)
       $env:CCI_MINIMAL = '1'
       $env:CCI_YES     = '1'
       $env:CCI_DRY_RUN = '1'
@@ -43,6 +44,9 @@ param(
 
     # Workshop key (wk_...) that opens the private skills; asked for when missing.
     [string]$Key = $env:CCI_KEY,
+
+    # Also install the OpenAI Codex CLI from npm. The skills go to Codex either way.
+    [switch]$Codex,
 
     [switch]$Minimal,
     [switch]$Yes,
@@ -100,6 +104,7 @@ if ($Skills) {
 if ($env:CCI_MINIMAL -eq '1') { $Minimal = $true }
 if ($env:CCI_YES     -eq '1') { $Yes     = $true }
 if ($env:CCI_DRY_RUN -eq '1') { $DryRun  = $true }
+if ($env:CCI_CODEX   -eq '1') { $Codex   = $true }
 
 $script:Preset    = $Preset
 $script:Installed = [System.Collections.Generic.List[string]]::new()
@@ -366,6 +371,39 @@ function Install-Prerequisite {
     }
 }
 
+# ------------------------------------------------------------------ codex ----
+
+# Opt-in (-Codex or CCI_CODEX=1): the OpenAI Codex CLI from npm, for people who
+# run Codex instead of, or next to, Claude Code. Needs Node, which the
+# prerequisites step installs.
+function Install-Codex {
+    if (-not $Codex) { return }
+    Write-Step "Codex"
+    if (Test-Command 'codex') {
+        $script:Already.Add("Codex $(codex --version 2>$null)")
+        Write-Ok "Codex already installed"
+        return
+    }
+    if (-not (Test-Command 'npm')) {
+        Write-Warn2 "npm not found, so Codex cannot install (it needs Node $NodeMinMajor+; re-run without -Minimal)"
+        $script:Skipped.Add("Codex (no npm)")
+        return
+    }
+    Invoke-Step "npm install -g @openai/codex" { & npm install -g '@openai/codex' | Out-Host } | Out-Null
+    if ($DryRun) { return }
+    # npm's global bin is on the user PATH for new windows; add it to this one so
+    # the verify step and the summary see codex now.
+    $npmBin = Join-Path $env:APPDATA 'npm'
+    if ((Test-Path $npmBin) -and (($env:Path -split ';') -notcontains $npmBin)) { $env:Path = "$npmBin;$env:Path" }
+    if (Test-Command 'codex') {
+        $script:Installed.Add("Codex")
+        Write-Ok "Codex installed"
+    } else {
+        Write-Warn2 "Codex did not install; run: npm install -g @openai/codex"
+        $script:Skipped.Add("Codex (npm install failed)")
+    }
+}
+
 # ------------------------------------------------------------ claude code ----
 
 function Install-ClaudeCode {
@@ -556,6 +594,36 @@ function Get-WorkshopKey {
     return $value
 }
 
+# Codex reads skills from $CODEX_HOME\skills (default ~\.codex\skills), not from
+# ~\.claude\skills. Copy each installed skill there too, so $hire and $setup work in
+# Codex as well. A copy, not a link: links on Windows need admin or Developer Mode.
+function Copy-SkillToCodex {
+    param([string]$Name)
+    $src       = Join-Path (Join-Path (Join-Path $env:USERPROFILE '.claude') 'skills') $Name
+    $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+    $skillsDir = Join-Path $codexHome 'skills'
+    $dest      = Join-Path $skillsDir $Name
+    if ($DryRun) {
+        Write-Host "  would copy:     " -ForegroundColor DarkGray -NoNewline
+        Write-Host "$src -> $dest"
+        return
+    }
+    if (-not (Test-Path (Join-Path $src 'SKILL.md'))) { return }
+    if (Test-Path $dest) {
+        $script:Skipped.Add("skill $Name for Codex (already present)")
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+    Copy-Item -Recurse -Path $src -Destination $dest
+    if (Test-Path (Join-Path $dest 'SKILL.md')) {
+        $script:Installed.Add("skill $Name for Codex")
+        Write-Ok "installed $dest"
+    } else {
+        Write-Warn2 "could not copy skill $Name for Codex"
+        $script:Skipped.Add("skill $Name for Codex (copy failed)")
+    }
+}
+
 function Install-Skill {
     if ($script:SkillNames.Count -eq 0) { return }
     Write-Step "Skills"
@@ -569,6 +637,7 @@ function Install-Skill {
     }
 
     foreach ($name in $script:SkillNames) { Install-OneSkill $name }
+    foreach ($name in $script:SkillNames) { Copy-SkillToCodex $name }
 
     # A skill is Markdown plus scripts, and the scripts need a runtime. -Minimal
     # skips the Node install, so say so rather than leaving a skill that cannot run.
@@ -650,6 +719,7 @@ function Write-Summary {
         Write-Host "  1. Open a new PowerShell or Command Prompt window (so PATH is loaded)."
         Write-Host "  2. Run:  claude"
         Write-Host "  3. Sign in when prompted with /login"
+        if ($Codex) { Write-Host '  Using Codex instead: run  codex , sign in, then type  $setup' }
     } else {
         Write-Host "Install did not verify. See the error above." -ForegroundColor Red
     }
@@ -668,6 +738,7 @@ try {
     Install-Prerequisite
     Install-ClaudeCode
     Update-SessionPath
+    Install-Codex
     Install-Preset
     Install-Skill
     $ok = Test-Installation

@@ -19,7 +19,7 @@ $src = Resolve-Path $ScriptPath
 $scratch = $Scratch
 
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($src, [ref]$null, [ref]$null)
-$wanted = 'Install-OneSkill','Install-Skill','Get-WorkshopKey','Write-Step','Write-Ok','Write-Warn2','Test-Command'
+$wanted = 'Install-OneSkill','Install-Skill','Copy-SkillToCodex','Get-WorkshopKey','Write-Step','Write-Ok','Write-Warn2','Test-Command'
 $fns = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
        Where-Object { $wanted -contains $_.Name }
 if ($fns.Count -ne $wanted.Count) { Write-Host "  FAIL extracted $($fns.Count)/$($wanted.Count) functions"; exit 1 }
@@ -33,6 +33,8 @@ if (-not $catalogAst) { Write-Host "  FAIL no `$SkillCatalog found"; exit 1 }
 Invoke-Expression $catalogAst[0].Extent.Text
 
 $env:USERPROFILE = $scratch
+# Codex's skills dir follows CODEX_HOME; unset it so the copy lands in the scratch profile.
+Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
 $env:TEMP = $scratch
 $DryRun = $false
 # The skills sit behind a workshop key; smoke.sh only runs this when CCI_KEY is set.
@@ -63,6 +65,9 @@ if (-not (Test-Path (Join-Path $dest 'SKILL.md'))) { Write-Host "  FAIL SKILL.md
 else { Write-Host "  PASS skill extracted to ~/.claude/skills/hire" }
 if ($script:Installed -notcontains 'skill hire') { Write-Host "  FAIL not reported installed"; $fails++ }
 else { Write-Host "  PASS reported as installed" }
+$codexDest = Join-Path (Join-Path (Join-Path $scratch '.codex') 'skills') 'hire'
+if (-not (Test-Path (Join-Path $codexDest 'SKILL.md'))) { Write-Host "  FAIL not copied to ~/.codex/skills/hire"; $fails++ }
+else { Write-Host "  PASS skill copied to ~/.codex/skills/hire for Codex" }
 
 # second run must leave it alone
 $script:Installed.Clear(); $script:Skipped.Clear()

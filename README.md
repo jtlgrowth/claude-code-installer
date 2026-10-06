@@ -138,6 +138,7 @@ Because a piped script has no command-line arguments, every flag has an environm
 | `--preset jtl` | `CCI_PRESET=jtl` | also write a starter `~/.claude` config (never overwrites an existing one) |
 | `--skills hire,setup` | `CCI_SKILLS=hire,setup` | also install agent skills into `~/.claude/skills/` (comma-separated; known: `hire`, `setup`; never overwrites an existing skill) |
 | `--key wk_...` | `CCI_KEY=wk_...` | the workshop key the skills need (asked for on the terminal when missing) |
+| `--codex` | `CCI_CODEX=1` | also install the OpenAI Codex CLI (npm). The skills are copied to `~/.codex/skills` either way, so `$hire` and `$setup` work in Codex too |
 | `--minimal` | `CCI_MINIMAL=1` | skip the package manager and `git`/`node`/`ripgrep`; install Claude Code only |
 | `--yes` | `CCI_YES=1` | non-interactive, answer yes to everything |
 | `--dry-run` | `CCI_DRY_RUN=1` | print every command, execute none |

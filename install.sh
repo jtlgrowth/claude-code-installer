@@ -9,6 +9,7 @@
 #   --preset jtl   CCI_PRESET=jtl     also write a starter ~/.claude config
 #   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
 #   --key wk_...   CCI_KEY=wk_...     workshop key for the skills (asked for when missing)
+#   --codex        CCI_CODEX=1        also install the OpenAI Codex CLI (skills always go to Codex too)
 #   --minimal      CCI_MINIMAL=1      skip package manager + git/node/ripgrep
 #   --yes          CCI_YES=1          non-interactive, assume yes
 #   --dry-run      CCI_DRY_RUN=1      print every command, execute none
@@ -36,6 +37,7 @@ SKILLS_BASE="https://download.jtlgrowth.com/skills"
 MINIMAL="${CCI_MINIMAL:-0}"
 ASSUME_YES="${CCI_YES:-0}"
 DRY_RUN="${CCI_DRY_RUN:-0}"
+CODEX="${CCI_CODEX:-0}"
 
 INSTALLED=()
 ALREADY=()
@@ -156,6 +158,7 @@ Flags (or env vars, for piped use):
   --preset jtl   CCI_PRESET=jtl    also write a starter ~/.claude config
   --skills hire,setup  CCI_SKILLS=hire,setup   also install agent skills (comma-separated)
   --key wk_...   CCI_KEY=wk_...    workshop key for the skills (asked for when missing)
+  --codex        CCI_CODEX=1       also install the OpenAI Codex CLI (skills always go to Codex too)
   --minimal      CCI_MINIMAL=1     skip package manager + git/node/ripgrep
   --yes          CCI_YES=1         non-interactive, assume yes
   --dry-run      CCI_DRY_RUN=1     print every command, execute none
@@ -207,6 +210,7 @@ while [ $# -gt 0 ]; do
       WORKSHOP_KEY="$2"; shift 2 ;;
     --key=*)
       WORKSHOP_KEY="${1#*=}"; shift ;;
+    --codex)    CODEX=1; shift ;;
     --minimal)  MINIMAL=1; shift ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --dry-run)  DRY_RUN=1; shift ;;
@@ -565,6 +569,67 @@ install_claude() {
   return 0
 }
 
+
+# ------------------------------------------------------------------ codex ----
+
+# Opt-in (--codex or CCI_CODEX=1): the OpenAI Codex CLI from npm, for people who
+# run Codex instead of, or next to, Claude Code. Needs Node, which the
+# prerequisites step installs.
+install_codex() {
+  [ "$CODEX" = "1" ] || return 0
+  step "Codex"
+  if have codex; then
+    ALREADY+=("Codex $(codex --version 2>/dev/null | head -1 | awk '{print $NF}')")
+    ok "Codex already installed"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found, so Codex cannot install (it needs Node $NODE_MIN_MAJOR+; re-run without --minimal)"
+    SKIPPED+=("Codex (no npm)")
+    return 0
+  fi
+  run npm install -g @openai/codex || true
+  [ "$DRY_RUN" = "1" ] && return 0
+  local npm_bin
+  npm_bin="$(npm prefix -g 2>/dev/null)/bin"
+  case ":$PATH:" in *":$npm_bin:"*) ;; *) [ -d "$npm_bin" ] && PATH="$npm_bin:$PATH" ;; esac
+  if have codex; then
+    INSTALLED+=("Codex")
+    ok "Codex installed"
+  else
+    warn "Codex did not install; run: npm install -g @openai/codex"
+    SKIPPED+=("Codex (npm install failed)")
+  fi
+}
+
+# Codex reads skills from $CODEX_HOME/skills (default ~/.codex/skills), not from
+# ~/.claude/skills. Copy each installed skill there too, so $hire and $setup work
+# in Codex as well. A copy, not a link, to match Windows, where links need admin.
+copy_skill_to_codex() {
+  local name="$1" src dest skills_dir
+  src="$HOME/.claude/skills/$name"
+  skills_dir="${CODEX_HOME:-$HOME/.codex}/skills"
+  dest="$skills_dir/$name"
+  if [ "$DRY_RUN" = "1" ]; then
+    printf '%s  would copy:%s     %s -> %s\n' "$C_DIM" "$C_RESET" "$src" "$dest"
+    return 0
+  fi
+  [ -f "$src/SKILL.md" ] || return 0
+  if [ -e "$dest" ]; then
+    SKIPPED+=("skill $name for Codex (already present)")
+    return 0
+  fi
+  mkdir -p "$skills_dir"
+  cp -R "$src" "$dest"
+  if [ -f "$dest/SKILL.md" ]; then
+    INSTALLED+=("skill $name for Codex")
+    ok "installed $dest"
+  else
+    warn "could not copy skill $name for Codex"
+    SKIPPED+=("skill $name for Codex (copy failed)")
+  fi
+}
+
 # ----------------------------------------------------------------- preset ----
 
 fetch_to() {
@@ -740,6 +805,9 @@ install_skills() {
   for name in $(printf '%s' "$SKILLS" | tr ',' ' '); do
     install_one_skill "$name"
   done
+  for name in $(printf '%s' "$SKILLS" | tr ',' ' '); do
+    copy_skill_to_codex "$name"
+  done
 
   # A skill is Markdown plus scripts, and the scripts need a runtime. --minimal
   # and Git Bash both skip the Node install, so say it plainly here instead of
@@ -838,6 +906,9 @@ summary() {
     say "  1. Open a new terminal (so PATH is loaded)."
     say "  2. Run:  claude"
     say "  3. Sign in when prompted with /login"
+    if [ "$CODEX" = "1" ]; then
+      say "  Using Codex instead: run  codex , sign in, then type  \$setup"
+    fi
   else
     printf '%sInstall did not verify.%s See the error above.\n' "$C_RED$C_BOLD" "$C_RESET"
   fi
@@ -865,6 +936,7 @@ main() {
   fi
   install_claude
   fix_path
+  install_codex
   install_preset
   install_skills
 
