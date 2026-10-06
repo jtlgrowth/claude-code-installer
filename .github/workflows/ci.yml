@@ -195,6 +195,24 @@ jobs:
           # $LASTEXITCODE is still 2 from the child; the step would inherit it.
           exit 0
 
+      # The room pastes the line WITHOUT the key and types the key when asked. Pipe the
+      # key into stdin, the way a typed answer arrives, from a clean skills folder.
+      - name: The key typed at the prompt works (paste line without the key)
+        shell: pwsh
+        env:
+          TYPED_KEY: ${{ secrets.CCI_KEY }}
+        run: |
+          if (-not $env:TYPED_KEY) { Write-Host "skipped: no workshop key secret"; exit 0 }
+          Remove-Item Env:CCI_KEY -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.claude\skills'), (Join-Path $env:USERPROFILE '.codex\skills') -ErrorAction SilentlyContinue
+          $out = $env:TYPED_KEY | pwsh -NoProfile -Command "`$env:CCI_SKILLS='hire,setup'; ./install.ps1" *>&1 | Out-String
+          if ($out -notmatch 'Workshop key') { Write-Host $out; Write-Error "the installer never asked for the key"; exit 1 }
+          foreach ($p in '.claude\skills\hire\SKILL.md','.claude\skills\setup\SKILL.md','.codex\skills\hire\SKILL.md','.codex\skills\setup\SKILL.md') {
+            if (-not (Test-Path (Join-Path $env:USERPROFILE $p))) { Write-Host $out; Write-Error "missing $p after typing the key"; exit 1 }
+          }
+          Write-Host "asked for the key, and the typed key installed hire + setup for Claude Code and Codex"
+          exit 0
+
   install-linux:
     name: real install (ubuntu container)
     runs-on: ubuntu-latest
